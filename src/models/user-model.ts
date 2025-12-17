@@ -5,7 +5,7 @@ import { Schema, model, Document, Types } from 'mongoose';
 export interface IUser extends Document {
   firstName: string;
   lastName: string;
-  username?: string;
+  username: string;
   email: string;
   password?: string; // Optional for OAuth users
   bio?: string;
@@ -37,7 +37,7 @@ const userSchema = new Schema<IUser>(
   {
     firstName: { type: String, required: true },
     lastName: { type: String, required: true },
-    username: { type: String, required: false, unique: true, trim: true },
+    username: { type: String, required: true, unique: true, trim: true },
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     password: { type: String, select: false }, // 'select: false' hides it from default queries
     googleId: { type: String, sparse: true, unique: true },

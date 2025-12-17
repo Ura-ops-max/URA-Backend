@@ -2,85 +2,83 @@ import { asyncHandler } from '@/middleware/errorHandler';
 import { Post, PostType } from '@/models/post-model';
 import { Request, Response, NextFunction } from 'express';
 import { Business } from '@/models/business-model';
+import { Review } from '@/models/review-model';
 import { Types } from 'mongoose';
 
 export const getUnifiedFeed = asyncHandler(async (req: Request, res: Response) => {
   const feed = await Post.find()
     .sort({ createdAt: -1 })
-    .limit(10)
+    .limit(20)
     .populate({
       path: 'author',
-      select: 'username profilePicture firstName lastName businessName profileImage'
+      // Based on your IBusiness and IUser schemas:
+      select: 'username firstName lastName profilePicture businessName businessLogo isVerified' 
     });
 
-  // Map the data so the Frontend gets a consistent "Display Name"
-  const formattedFeed = feed.map((post: any) => {
-    const isBusiness = post.authorType === 'Business';
+  const formattedFeed = await Promise.all(feed.map(async (post: any) => {
     const author = post.author;
+    const isBusiness = post.authorType === 'Business';
+
+    // 1. Calculate Ratings for Business if it's a PRODUCT post
+    let ratingData = { rating: 0, reviewCount: 0 };
+    if (isBusiness) {
+      const reviews = await Review.find({ reviewedItem: author._id, reviewedItemModel: 'Business' });
+      const total = reviews.reduce((acc, rev) => acc + rev.rating, 0);
+      ratingData = {
+        rating: reviews.length > 0 ? Number((total / reviews.length).toFixed(1)) : 0,
+        reviewCount: reviews.length
+      };
+    }
 
     return {
       ...post._doc,
+      // Mapping to your schema's specific names
       displayName: isBusiness 
         ? author.businessName 
         : `${author.firstName} ${author.lastName}`,
+      
       displayAvatar: isBusiness 
-        ? author.profileImage 
-        : author.profilePicture
+        ? author.businessLogo  // Schema uses businessLogo, not profileImage
+        : author.profilePicture,
+
+      username: isBusiness ? null : author.username,
+
+      // Additional Data for design
+      isVerified: author.isVerified || false, // Add this to Business Schema if needed
+      rating: isBusiness ? ratingData.rating : null,
+      reviewCount: isBusiness ? ratingData.reviewCount : null,
     };
-  });
+  }));
 
   res.json({ success: true, posts: formattedFeed });
 });
 
 
-export const createPost = asyncHandler(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-  const userId = (req.user as any)._id; // Cast user to get ID
+export const createPost = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const userId = (req.user as any)._id;
   const { type } = req.body;
 
-  // Use Types.ObjectId to avoid Type mismatch errors
   let authorId: Types.ObjectId = userId;
   let authorType: 'User' | 'Business' = 'User';
 
-  // 1. Logic for Products
   if (type === PostType.PRODUCT) {
     const business = await Business.findOne({ owner: userId });
-    
     if (!business) {
-      res.status(403).json({ 
-        message: "You must create a business profile before uploading products." 
-      });
-      return; // Return nothing (void) after sending response
+      res.status(403).json({ success: false, message: "Business profile required." });
+      return;
     }
-    
     authorId = business._id as Types.ObjectId;
     authorType = 'Business';
-  } 
-  
-  // 2. Logic for standard Posts
-  else {
-    const business = await Business.findOne({ owner: userId });
-    if (business) {
-      authorId = business._id as Types.ObjectId;
-      authorType = 'Business';
-    }
   }
 
-  // 3. Create the document
   const post = await Post.create({
     ...req.body,
     author: authorId,
     authorType: authorType
   });
 
-  res.status(201).json({
-    status: 'success',
-    data: post
-  });
-
-  // Explicitly return nothing to satisfy the Promise<void> type
-  return; 
+  res.status(201).json({ success: true, data: post });
 });
-
 // import { eventEmitter } from '@/services/event-emitter.services'; // NEW IMPORT
 
 // export const toggleBookmark = asyncHandler(async (req: Request, res: Response) => {

@@ -38,6 +38,7 @@ export interface IBusiness extends Document {
     country: string;
     fullAddress: string; // For display
   };
+  isVerified: Boolean;
   location?: IPoint; // For geospatial queries
   operatingHours: IOperatingHour[];
   followers: Types.ObjectId[]; // Refs to Users
@@ -89,6 +90,7 @@ const businessSchema = new Schema<IBusiness>(
         close: { type: String },
       },
     ],
+    isVerified: { type: Boolean, default: false },
     followers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     loanEligibility: { type: Number, default: 0 },
     descriptionVector: { type: [Number], select: false }, // Store embedding
