@@ -38,11 +38,12 @@ export const usernameSchema = Joi.string()
   .min(VALIDATION_RULES.USERNAME_MIN_LENGTH)
   .max(VALIDATION_RULES.USERNAME_MAX_LENGTH)
   .pattern(REGEX_PATTERNS.USERNAME)
-  .optional()
+  .required()
   .messages({
     'string.min': `Username must be at least ${VALIDATION_RULES.USERNAME_MIN_LENGTH} characters long`,
     'string.max': `Username cannot exceed ${VALIDATION_RULES.USERNAME_MAX_LENGTH} characters`,
     'string.pattern.base': 'Username can only contain letters, numbers, and underscores',
+    'any.required': 'Username is required',
   });
 
 export const bioSchema = Joi.string()

@@ -20,8 +20,8 @@ export interface IBusiness extends Document {
   about: string;
   tagline?: string;
   category: 'Restaurant' | 'Fashion' | 'Auto Repair' | 'Stores' | 'Beauty' | 'Other';
-  profileImage?: string;
-  coverImage?: string;
+  businessLogo?: string;
+  businessCover?: string;
   contact: {
     phone?: string;
     email?: string;
@@ -58,8 +58,8 @@ const businessSchema = new Schema<IBusiness>(
       enum: ['Restaurant', 'Fashion', 'Auto Repair', 'Stores', 'Beauty', 'Other'],
       required: true,
     },
-    profileImage: { type: String },
-    coverImage: { type: String },
+    businessLogo: { type: String },
+    businessCover: { type: String },
     contact: {
       phone: { type: String },
       email: { type: String },

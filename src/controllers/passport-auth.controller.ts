@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import passport from 'passport';
 import bcrypt from 'bcryptjs';
 import { User } from '@/models/user-model';
-import { AuthenticationError, ValidationError } from '@/utils/errors';
+import { AuthenticationError, ValidationError, ErrorDetail } from '@/utils/errors';
 import {
   generateAccessToken,
   generateRefreshToken,
@@ -19,11 +19,19 @@ import { HTTP_STATUS } from '@/constants';
  * Register new user (Local)
  */
 export const register = asyncHandler(async (req: Request, res: Response): Promise<void> => {
-  const { firstName, lastName, email, password } = req.body;
+  const { firstName, lastName, email, password, username } = req.body;
 
   const exists = await User.findOne({ email });
   if (exists) {
-    throw new ValidationError('Email already in use');
+    const errorDetails: ErrorDetail[] = [
+      {
+        field: 'email', // The field name the error belongs to
+        message: 'An account with this email already exists. Please sign in.', // User-friendly message
+        location: 'body',
+      },
+    ];
+    throw new ValidationError('Validation failed', errorDetails);
+
   }
 
   const hashedPassword = password ? await bcrypt.hash(password, 12) : undefined;
@@ -32,6 +40,7 @@ export const register = asyncHandler(async (req: Request, res: Response): Promis
   await User.create({
     firstName,
     lastName,
+    username,
     email,
     password: hashedPassword,
     emailVerificationToken: hash,
@@ -216,4 +225,31 @@ export const verifyEmail = asyncHandler(async (req: Request, res: Response): Pro
     success: true,
     message: 'Email verified successfully. You can now log in.',
   });
+});
+
+
+export const checkUsernameAvailability = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const username = req.query.username as string;
+
+    if (!username || username.trim() === '') {
+        res.status(HTTP_STATUS.OK).json({
+            available: true,
+            message: 'Username is required for check.',
+        });
+        return;
+    }
+
+    const normalizedUsername = username.trim().toLowerCase(); 
+    const exists = await User.findOne({ username: normalizedUsername });
+    if (exists) {
+        res.status(HTTP_STATUS.OK).json({
+            available: false,
+            message: 'This username is already taken.',
+        });
+    } else {
+        res.status(HTTP_STATUS.OK).json({
+            available: true,
+            message: 'Username is available.',
+        });
+    }
 });

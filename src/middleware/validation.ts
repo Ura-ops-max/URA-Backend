@@ -8,7 +8,7 @@ export const validateRequest = (schema: {
   params?: Joi.ObjectSchema;
 }) => {
   return (req: Request, _res: Response, next: NextFunction): void => {
-    const errors: Array<{ field: string; message: string; location: string }> = [];
+    const errors: Array<{ field: string; message: string; location: 'body' | 'query' | 'params' }> = [];
 
     // Validate request body
     if (schema.body) {
@@ -18,7 +18,7 @@ export const validateRequest = (schema: {
           ...error.details.map(detail => ({
             field: detail.path.join('.'),
             message: detail.message,
-            location: 'body',
+            location: 'body' as const,
           }))
         );
       }
@@ -32,7 +32,7 @@ export const validateRequest = (schema: {
           ...error.details.map(detail => ({
             field: detail.path.join('.'),
             message: detail.message,
-            location: 'query',
+            location: 'query' as const,
           }))
         );
       }
@@ -46,7 +46,7 @@ export const validateRequest = (schema: {
           ...error.details.map(detail => ({
             field: detail.path.join('.'),
             message: detail.message,
-            location: 'params',
+            location: 'params' as const,
           }))
         );
       }

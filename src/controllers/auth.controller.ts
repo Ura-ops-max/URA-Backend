@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import speakeasy from 'speakeasy';
 import QRCode from 'qrcode';
 import { User } from '@/models/user-model';
-import { AuthenticationError, ValidationError } from '@/utils/errors';
+import { AuthenticationError, ValidationError, ErrorDetail } from '@/utils/errors';
 import {
   generateAccessToken,
   generateRefreshToken,
@@ -15,13 +15,21 @@ import { sendVerificationEmail } from '@/services/email.service';
 import { asyncHandler } from '@/middleware/errorHandler';
 import { HTTP_STATUS } from '@/constants';
 
+
 export const register = asyncHandler(async (req: Request, res: Response): Promise<void> => {
   const { firstName, lastName, email, password } = req.body;
 
   // Check if user already exists
   const exists = await User.findOne({ email });
   if (exists) {
-    throw new ValidationError('Email already in use');
+    const errorDetails: ErrorDetail[] = [
+      {
+        field: 'email', // The field name the error belongs to
+        message: 'An account with this email already exists. Please sign in.', // User-friendly message
+        location: 'body',
+      },
+    ];
+    throw new ValidationError('Validation failed', errorDetails);
   }
 
   // Hash password if provided

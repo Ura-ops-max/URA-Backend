@@ -1,34 +1,23 @@
+// src/routes/chat.route.ts (Existing routes and the new route)
+
 import { Router } from 'express';
 import { requireAuth } from '@/middleware/auth';
-import { Conversation } from '@/models/conversation-model';
-import { Message } from '@/models/message-model';
+import { 
+    createOrGetConversation, // Renamed for clarity
+    getMessages,             // Renamed for clarity
+    getConversationList      // <-- New Controller Import
+} from '@/controllers/chat.controller'; 
+// Assuming all controller logic is now moved to chat.controller.ts
 
 const router = Router();
 
-// Create or get conversation between user and business
-router.post('/conversations', requireAuth, async (req, res, next) => {
-  try {
-    const { businessId } = req.body;
-    const userId = (req as unknown as { user: { id: string } }).user.id;
-    const convo = await Conversation.findOneAndUpdate(
-      { 'participants.user': userId, 'participants.business': businessId },
-      { $setOnInsert: { participants: { user: userId, business: businessId } } },
-      { upsert: true, new: true }
-    );
-    res.json({ success: true, data: convo });
-  } catch (err) {
-    next(err);
-  }
-});
+// Route to get all conversations for the list view (THE NEW ROUTE)
+router.get('/conversations/list', requireAuth, getConversationList);
 
-// Get messages for a conversation
-router.get('/conversations/:id/messages', requireAuth, async (req, res, next) => {
-  try {
-    const messages = await Message.find({ conversation: req.params.id }).sort({ createdAt: 1 });
-    res.json({ success: true, data: messages });
-  } catch (err) {
-    next(err);
-  }
-});
+// Create or get conversation between user and business (Existing)
+router.post('/conversations', requireAuth, createOrGetConversation);
+
+// Get messages for a conversation (Existing)
+router.get('/conversations/:id/messages', requireAuth, getMessages);
 
 export default router;

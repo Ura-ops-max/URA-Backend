@@ -1,3 +1,4 @@
+import { query } from 'winston';
 import {
   createSchema,
   emailSchema,
@@ -38,7 +39,12 @@ export const authSchemas = {
     currentPassword: requiredStringSchema('Current password'),
     newPassword: passwordSchema.label('New password'),
   }),
+  checkUsername: createSchema({
+    username: usernameSchema,
+  }
+  )
 };
+
 
 // Export individual schemas with body wrapper
 export const registerSchema = { body: authSchemas.register };
@@ -47,3 +53,7 @@ export const refreshTokenSchema = { body: authSchemas.refreshToken };
 export const forgotPasswordSchema = { body: authSchemas.forgotPassword };
 export const resetPasswordSchema = { body: authSchemas.resetPassword };
 export const changePasswordSchema = { body: authSchemas.changePassword };
+export const checkUsernameSchema = { query: authSchemas.checkUsername };
+
+
+
