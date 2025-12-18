@@ -11,10 +11,6 @@ export const getActivityList = asyncHandler(async (req: Request, res: Response) 
   const userId = (req as any).user.id;
   const userIdObj = new Types.ObjectId(userId);
 
-  // 2. Query activities
-  // We want activities where:
-  // - The targetOwner is the current user
-  // - The actor (person who did the action) is NOT the current user
   const activities = await Activity.find({
     targetOwner: userIdObj,
     actor: { $ne: userIdObj }

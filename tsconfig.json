@@ -40,7 +40,7 @@
       "@/constants/*": ["src/constants/*"],
       "@/validators/*": ["src/validators/*"]
     },
-     "types": ["jest"]
+     "types": ["jest", "node"]
   },
   "include": [
     "src/**/*.ts",

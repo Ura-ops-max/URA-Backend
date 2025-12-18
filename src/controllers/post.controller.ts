@@ -1,114 +1,78 @@
+// backend/controllers/feedController.ts
+import { Request, Response } from 'express';
 import { asyncHandler } from '@/middleware/errorHandler';
 import { Post, PostType } from '@/models/post-model';
-import { Request, Response, NextFunction } from 'express';
 import { Business } from '@/models/business-model';
 import { Review } from '@/models/review-model';
-import { Types } from 'mongoose';
 import { Bookmark } from '@/models/bookmark.model';
+import { Types } from 'mongoose';
+import { eventEmitter } from '@/services/event-emitter.services';
 
-// export const getUnifiedFeed = asyncHandler(async (req: Request, res: Response) => {
-//   const feed = await Post.find()
-//     .sort({ createdAt: -1 })
-//     .limit(20)
-//     .populate({
-//       path: 'author',
-//       // Based on your IBusiness and IUser schemas:
-//       select: 'username firstName lastName profilePicture businessName businessLogo isVerified' 
-//     });
+/**
+ * Helper to safely extract user ID
+ */
+const getAuthUserId = (req: Request): string | null => {
+  const user = (req as any).user;
+  const id = user?._id || user?.id || user?.userId;
+  return id ? id.toString() : null;
+};
 
-//   const formattedFeed = await Promise.all(feed.map(async (post: any) => {
-//     const author = post.author;
-//     const isBusiness = post.authorType === 'Business';
+// GET UNIFIED FEED
+export const getUnifiedFeed = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const currentUserId = getAuthUserId(req);
 
-//     // 1. Calculate Ratings for Business if it's a PRODUCT post
-//     let ratingData = { rating: 0, reviewCount: 0 };
-//     if (isBusiness) {
-//       const reviews = await Review.find({ reviewedItem: author._id, reviewedItemModel: 'Business' });
-//       const total = reviews.reduce((acc, rev) => acc + rev.rating, 0);
-//       ratingData = {
-//         rating: reviews.length > 0 ? Number((total / reviews.length).toFixed(1)) : 0,
-//         reviewCount: reviews.length
-//       };
-//     }
-
-//     return {
-//       ...post._doc,
-//       // Mapping to your schema's specific names
-//       displayName: isBusiness 
-//         ? author.businessName 
-//         : `${author.firstName} ${author.lastName}`,
-
-//       displayAvatar: isBusiness 
-//         ? author.businessLogo  // Schema uses businessLogo, not profileImage
-//         : author.profilePicture,
-
-//       username: isBusiness ? null : author.username,
-
-//       // Additional Data for design
-//       isVerified: author.isVerified || false, // Add this to Business Schema if needed
-//       rating: isBusiness ? ratingData.rating : null,
-//       reviewCount: isBusiness ? ratingData.reviewCount : null,
-//     };
-//   }));
-
-//   res.json({ success: true, posts: formattedFeed });
-// });
-
-
-
-
-
-// backend/controllers/feedController.ts
-
-export const getUnifiedFeed = asyncHandler(async (req: Request, res: Response) => {
-  const currentUserId = req.user?._id; // Optional: user might not be logged in
   const feed = await Post.find()
     .sort({ createdAt: -1 })
     .limit(20)
     .populate({
       path: 'author',
       select: 'username firstName lastName profilePicture businessName businessLogo isVerified'
-    });
+    })
+    .lean(); // Use lean() for faster performance since we are mapping anyway
 
-  // Get all bookmarks by this user to check against posts efficiently
-  const userBookmarks = currentUserId
-    ? await Bookmark.find({ user: currentUserId, targetType: 'Post' }).select('targetId')
-    : [];
-  const bookmarkedPostIds = userBookmarks.map(b => b.targetId.toString());
+  // 1. Efficiently get bookmarks if user is logged in
+  let bookmarkedPostIds: string[] = [];
+  if (currentUserId) {
+    const userBookmarks = await Bookmark.find({ 
+      user: new Types.ObjectId(currentUserId), 
+      targetType: 'Post' 
+    }).select('targetId');
+    bookmarkedPostIds = userBookmarks.map(b => b.targetId.toString());
+  }
 
+  // 2. Format the feed items
   const formattedFeed = await Promise.all(feed.map(async (post: any) => {
     const author = post.author;
     const isBusiness = post.authorType === 'Business';
 
-    // ... your existing review calculation logic here ...
-    // 1. Calculate Ratings for Business if it's a PRODUCT post
+    // Calculate Ratings for Business
     let ratingData = { rating: 0, reviewCount: 0 };
-    if (isBusiness) {
-      const reviews = await Review.find({ reviewedItem: author._id, reviewedItemModel: 'Business' });
+    if (isBusiness && author) {
+      const reviews = await Review.find({ 
+        reviewedItem: author._id, 
+        reviewedItemModel: 'Business' 
+      });
       const total = reviews.reduce((acc, rev) => acc + rev.rating, 0);
       ratingData = {
         rating: reviews.length > 0 ? Number((total / reviews.length).toFixed(1)) : 0,
         reviewCount: reviews.length
       };
     }
-    // 1. Get the current user ID from the request (ensure it's a string)
-    const userIdStr = currentUserId?.toString();
 
-    // 2. Check if the user ID exists in the likes array by converting each element to a string
-    const isLiked = userIdStr
-      ? post.likes.some((id: any) => id.toString() === userIdStr)
+    // Check interaction states
+    const isLiked = currentUserId
+      ? post.likes.some((id: any) => id.toString() === currentUserId)
       : false;
-    return {
-      ...post._doc,
-      displayName: isBusiness ? author.businessName : `${author.firstName} ${author.lastName}`,
-      displayAvatar: isBusiness ? author.businessLogo : author.profilePicture,
-      username: isBusiness ? null : author.username,
 
-      // 🚨 NEW INTERACTION DATA
+    return {
+      ...post,
+      displayName: isBusiness ? author?.businessName : `${author?.firstName} ${author?.lastName}`,
+      displayAvatar: isBusiness ? author?.businessLogo : author?.profilePicture,
+      username: isBusiness ? null : author?.username,
       likesCount: post.likes.length,
       isBookmarked: bookmarkedPostIds.includes(post._id.toString()),
       isLiked: isLiked,
-      isVerified: author.isVerified || false,
+      isVerified: author?.isVerified || false,
       rating: isBusiness ? ratingData.rating : null,
       reviewCount: isBusiness ? ratingData.reviewCount : null,
     };
@@ -117,22 +81,24 @@ export const getUnifiedFeed = asyncHandler(async (req: Request, res: Response) =
   res.json({ success: true, posts: formattedFeed });
 });
 
-
-
-
-
-
+// CREATE POST
 export const createPost = asyncHandler(async (req: Request, res: Response): Promise<void> => {
-  const userId = (req.user as any)._id;
-  const { type } = req.body;
+  const userId = getAuthUserId(req);
+  if (!userId) {
+    res.status(401).json({ success: false, message: "Unauthorized" });
+    return;
+  }
 
-  let authorId: Types.ObjectId = userId;
+  const { type, content } = req.body;
+
+  let authorId: Types.ObjectId = new Types.ObjectId(userId);
   let authorType: 'User' | 'Business' = 'User';
 
+  // If it's a product post, the author is the Business, not the User
   if (type === PostType.PRODUCT) {
     const business = await Business.findOne({ owner: userId });
     if (!business) {
-      res.status(403).json({ success: false, message: "Business profile required." });
+      res.status(403).json({ success: false, message: "Business profile required to post products." });
       return;
     }
     authorId = business._id as Types.ObjectId;
@@ -145,27 +111,16 @@ export const createPost = asyncHandler(async (req: Request, res: Response): Prom
     authorType: authorType
   });
 
+  // 🚨 EVENT LOG: Log the 'signup' or 'post' activity
+  // Since you wanted to store activities, we log the creation of a post
+  eventEmitter.emit('activityLogged', {
+    actorId: userId, // The user who did it
+    actionType: 'post', // Or use a new type like 'post' if you add it to your schema
+    targetModel: 'Post',
+    targetId: (post._id as Types.ObjectId).toString(),
+    targetOwnerId: userId, // They own their own post
+    contentPreview: content?.substring(0, 50)
+  });
+
   res.status(201).json({ success: true, data: post });
 });
-// import { eventEmitter } from '@/services/event-emitter.services'; // NEW IMPORT
-
-// export const toggleBookmark = asyncHandler(async (req: Request, res: Response) => {
-//     const userId = (req as unknown as { user: { id: string } }).user.id;
-//     const postId = req.params.postId;
-
-//     // ... Primary action logic here ...
-//     const post = await Post.findById(postId).select('author');
-
-//     if (post) {
-//         // 🚨 Fire the event! The controller does NOT care how the logging is done.
-//         eventEmitter.emit('activityLogged', {
-//             actorId: userId,
-//             actionType: 'bookmark',
-//             targetModel: 'Post',
-//             targetId: postId,
-//             targetOwnerId: post.author.toString(),
-//         });
-//     }
-
-//     res.json({ success: true, message: 'Bookmark toggled.' });
-// });

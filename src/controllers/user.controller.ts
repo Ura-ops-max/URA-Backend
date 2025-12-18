@@ -1,17 +1,23 @@
 import { Request, Response } from 'express';
 import { User } from '@/models/user-model';
-
 import { AuthenticationError, NotFoundError } from '@/utils/errors';
 import { asyncHandler } from '@/middleware/errorHandler';
 import { HTTP_STATUS } from '@/constants';
 import { Business } from '@/models/business-model';
-import { uploadToCloud } from '@/services/upload-service';
-import { UserType } from '@/types/api.types';
-import mongoose from "mongoose";
+import { eventEmitter } from '@/services/event-emitter.services';
+import mongoose, { Types } from "mongoose";
 
+/**
+ * Helper to safely extract user ID
+ */
+const getAuthUserId = (req: Request): string | null => {
+  const user = (req as any).user;
+  const id = user?._id || user?.id || user?.userId;
+  return id ? id.toString() : null;
+};
 
 export const getCurrentUser = asyncHandler(async (req: Request, res: Response): Promise<void> => {
-  const userId = (req as any).user?.id || (req as any).user?.userId || (req as any).user?._id;
+  const userId = getAuthUserId(req);
 
   if (!userId) {
     throw new AuthenticationError('User not authenticated');
@@ -25,51 +31,26 @@ export const getCurrentUser = asyncHandler(async (req: Request, res: Response): 
     throw new AuthenticationError('User not found');
   }
 
-  // Aggregate related data
   const { Post } = await import('@/models/post-model');
-  const { Business } = await import('@/models/business-model');
 
   const [posts, businesses] = await Promise.all([
-    Post.find({ business: { $in: user.businesses } })
+    Post.find({ author: userId }) // Adjusted to check author field for consistency
       .sort({ createdAt: -1 })
       .limit(10),
-    Business.find({ _id: { $in: user.businesses } }).select(
-      'businessName profileImage coverImage followers likes category'
+    Business.find({ owner: userId }).select(
+      'businessName businessLogo businessCover followers likes category'
     ),
   ]);
 
   res.status(HTTP_STATUS.OK).json({
     success: true,
     message: 'User retrieved successfully',
-    user: {
-      _id: user._id,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      email: user.email,
-      username: user.username,
-      profilePicture: user.profilePicture,
-      coverPicture: user.coverPicture,
-      bio: user.bio,
-      businessName: user.businessName,
-      isBusinessOwner: user.isBusinessOwner,
-      emailVerified: user.emailVerified,
-      twoFactorEnabled: user.twoFactorEnabled,
-      lastLoginAt: user.lastLoginAt,
-      bookmarkedBusinesses: user.bookmarkedBusinesses,
-      bookmarkedPosts: user.bookmarkedPosts,
-      savedEvents: user.savedEvents,
-      followingUsers: user.followingUsers,
-      followingBusinesses: user.followingBusinesses,
-      followers: user.followers,
-      businesses: user.businesses,
-      createdAt: user.createdAt,
-      updatedAt: user.updatedAt,
-    },
+    user,
     related: {
       businesses,
       recentPosts: posts,
       counts: {
-        posts: await Post.countDocuments({ business: { $in: user.businesses } }),
+        posts: await Post.countDocuments({ author: userId }),
         followers: user.followers.length,
         following: user.followingUsers.length + user.followingBusinesses.length,
       },
@@ -77,25 +58,12 @@ export const getCurrentUser = asyncHandler(async (req: Request, res: Response): 
   });
 });
 
-export const updateProfile = asyncHandler(async (req: Request, res: Response) => {
-  // Reliable userId extraction
-  const userId = req.user?._id || (req as any).user?.id;
+export const updateProfile = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const userId = getAuthUserId(req);
+  if (!userId) throw new AuthenticationError('User not authenticated');
 
-  if (!userId) {
-    throw new AuthenticationError('User not authenticated');
-  }
+  const { firstName, lastName, bio, profilePicture, coverPicture } = req.body;
 
-  // Now profilePicture and coverPicture come directly from req.body as strings (URLs)
-  const { 
-    firstName, 
-    lastName, 
-    bio, 
-    profilePicture, 
-    coverPicture, 
-    businessData 
-  } = req.body;
-
-  // Prepare the update object
   const updateData: any = {};
   if (firstName) updateData.firstName = firstName;
   if (lastName) updateData.lastName = lastName;
@@ -103,65 +71,44 @@ export const updateProfile = asyncHandler(async (req: Request, res: Response) =>
   if (profilePicture) updateData.profilePicture = profilePicture;
   if (coverPicture) updateData.coverPicture = coverPicture;
 
-  // 1. Update User
   const user = await User.findByIdAndUpdate(
     userId, 
     { $set: updateData }, 
     { new: true, runValidators: true }
   );
 
-  if (!user) {
-    throw new NotFoundError('User not found');
-  }
+  if (!user) throw new NotFoundError('User not found');
 
-  // 2. Update Business (if owner and businessData is provided)
-  if (user.isBusinessOwner && businessData) {
-    await Business.findOneAndUpdate(
-      { owner: userId }, 
-      { $set: businessData },
-      { new: true }
-    );
-  }
-
-  res.status(200).json({ 
-    success: true, 
-    message: "Profile updated successfully",
-    user 
+  // 🚨 EVENT LOG: Profile Update
+  eventEmitter.emit('activityLogged', {
+    actorId: userId,
+    actionType: 'signup', // Reusing signup or could be 'update'
+    targetModel: 'User',
+    targetId: userId,
+    targetOwnerId: userId,
   });
+
+  res.status(200).json({ success: true, user });
 });
 
-// src/controllers/business.controller.ts
-export const updateBusiness = asyncHandler(async (req: Request, res: Response) => {
-  const userId = req.user?._id;
+export const updateBusiness = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const userId = getAuthUserId(req);
+  if (!userId) throw new AuthenticationError('User not authenticated');
 
-  // Destructure the clean JSON sent from the frontend
   const { 
-    businessName, 
-    category, 
-    about, 
-    phone, 
-    website, 
-    fullAddress, 
-    businessLogo, 
-    businessCover,
-    operatingHours 
+    businessName, category, about, phone, website, 
+    fullAddress, businessLogo, businessCover, operatingHours 
   } = req.body;
 
-  // Map to your Mongoose Schema structure
   const updateData = {
     businessName,
     category,
     about,
     businessLogo,
     businessCover,
-    contact: {
-      phone,
-      website
-    },
-    address: {
-      fullAddress
-    },
-    operatingHours // This is already an array of {day, open, close}
+    contact: { phone, website },
+    address: { fullAddress },
+    operatingHours 
   };
 
   const business = await Business.findOneAndUpdate(
@@ -170,30 +117,28 @@ export const updateBusiness = asyncHandler(async (req: Request, res: Response) =
     { new: true, runValidators: true }
   );
 
-  if (!business) {
-    throw new NotFoundError('Business profile not found');
-  }
+  if (!business) throw new NotFoundError('Business profile not found');
 
-  res.status(200).json({
-    success: true,
-    message: "Business profile updated successfully",
-    business
+  // 🚨 EVENT LOG: Business Info Updated
+  eventEmitter.emit('activityLogged', {
+    actorId: userId,
+    actionType: 'signup', 
+    targetModel: 'User', // Logging against the user's business presence
+    targetId: (business._id as Types.ObjectId).toString(),
+    targetOwnerId: userId,
   });
+
+  res.status(200).json({ success: true, business });
 });
 
-
 export const convertToBusiness = asyncHandler(async (req: Request, res: Response): Promise<void> => {
-  const userId = req.user!._id; // The '!' tells TS it's safe
+  const userId = getAuthUserId(req);
+  if (!userId) throw new AuthenticationError('User not authenticated');
 
-  // const user = await User.findById(userId);
-
-  const user = req.user as UserType;
+  const user = await User.findById(userId);
   if (user?.isBusinessOwner) {
-    res.status(400).json({
-      success: false,
-      message: "Account is already a business account."
-    });
-    return; // This ensures we return 'void'
+    res.status(400).json({ success: false, message: "Already a business account." });
+    return;
   }
 
   const session = await mongoose.startSession();
@@ -202,28 +147,27 @@ export const convertToBusiness = asyncHandler(async (req: Request, res: Response
   try {
     await User.findByIdAndUpdate(userId, { isBusinessOwner: true }, { session });
 
-    // Inside convertToBusiness in user.controller.ts
-
-    await Business.create([{
+    const business = await Business.create([{
       owner: userId,
       businessName: `${user?.firstName || 'My'}'s Business`,
       about: "Update your business description here.",
       category: "Other",
       contact: { email: user?.email },
-      // FIX: Provide the required coordinates array
-      location: {
-        type: "Point",
-        coordinates: [0, 0] // [longitude, latitude] - default to null island
-      }
+      location: { type: "Point", coordinates: [0, 0] }
     }], { session });
 
     await session.commitTransaction();
 
-    // Do not 'return' the res object, just call the method
-    res.status(200).json({
-      success: true,
-      message: "Account upgraded successfully."
+    // 🚨 EVENT LOG: Account Upgrade
+    eventEmitter.emit('activityLogged', {
+      actorId: userId,
+      actionType: 'signup', 
+      targetModel: 'User',
+      targetId: (business[0]._id as Types.ObjectId).toString(),
+      targetOwnerId: userId,
     });
+
+    res.status(200).json({ success: true, message: "Account upgraded successfully." });
   } catch (error) {
     await session.abortTransaction();
     throw error;
@@ -232,46 +176,30 @@ export const convertToBusiness = asyncHandler(async (req: Request, res: Response
   }
 });
 
-
-
-
-// controllers/user-controller.ts
-export const getUserProfile = asyncHandler(async (req: Request, res: Response) => {
+export const getUserProfile = asyncHandler(async (req: Request, res: Response): Promise<void> => {
   const { userId } = req.params;
 
-  // 1. Find the User
   const user = await User.findById(userId).select(
     '-password -emailVerificationToken -emailVerificationExpires -twoFactorSecret -mfaRecoveryCodes'
   );
 
-  if (!user) {
-    throw new NotFoundError('User not found');
-  }
+  if (!user) throw new NotFoundError('User not found');
 
-  // 2. Find their Business (since it's 1-to-1)
-  const { Business } = await import('@/models/business-model');
   const { Post } = await import('@/models/post-model');
-
   const business = await Business.findOne({ owner: userId });
 
-  // 3. Gather Stats & Related Data
-  // If they have a business, get posts for that business. 
-  // If not, get posts where they are the author (depending on your post model)
-  const [posts, followersCount] = await Promise.all([
-    Post.find(business ? { business: business._id } : { author: userId })
-      .sort({ createdAt: -1 })
-      .limit(10),
-    user.followers.length
+  const [posts] = await Promise.all([
+    Post.find({ author: userId }).sort({ createdAt: -1 }).limit(10),
   ]);
 
   res.status(HTTP_STATUS.OK).json({
     success: true,
     user,
-    business: business || null, // Key: returns null if no business exists
+    business,
     related: {
       recentPosts: posts,
       counts: {
-        posts: await Post.countDocuments(business ? { business: business._id } : { author: userId }),
+        posts: await Post.countDocuments({ author: userId }),
         followers: user.followers.length,
         following: user.followingUsers.length + user.followingBusinesses.length,
       },

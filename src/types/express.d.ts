@@ -1,11 +1,11 @@
-import { UserType } from "./api.types"; // Adjust path to where your UserType is
+// src/types/express.d.ts
+import { IUser } from '@/models/user-model'; // Import your User interface
 
 declare global {
   namespace Express {
-    interface User extends UserType {} // Merges your UserType into Express's User
-    
     interface Request {
-      user?: UserType; 
+      // This tells TS that every Request COULD have a user
+      user: IUser; 
     }
   }
 }

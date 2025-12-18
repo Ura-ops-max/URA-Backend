@@ -18,6 +18,7 @@ export const eventEmitter = new AppEventEmitter();
 
 // 🚨 Define the listener that executes the logging action
 eventEmitter.on('activityLogged', async (payload: ActivityPayload) => {
+    console.log("loggong activity");
     try {
         await Activity.create({
             actor: new Types.ObjectId(payload.actorId),
