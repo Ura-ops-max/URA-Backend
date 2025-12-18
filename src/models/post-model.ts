@@ -13,7 +13,7 @@ export interface IPost extends Document {
   type: PostType;
   caption: string;
   media: string[];
-  
+  tags?: string[],
   // Product Fields (Required only if type is PRODUCT)
   productName?: string;
   category?: string;
@@ -45,7 +45,7 @@ const postSchema = new Schema<IPost>(
     },
     caption: { type: String, required: true },
     media: [{ type: String }],
-
+    tags: [{ type: String }],
     // Product specific
     productName: { type: String },
     category: { type: String },
