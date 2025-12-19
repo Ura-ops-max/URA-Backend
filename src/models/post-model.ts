@@ -1,71 +1,42 @@
 import { Schema, model, Document, Types } from 'mongoose';
+import { IProduct, productSchema } from './product-model';
 
-export enum PostType {
-  POST = 'POST',
-  PRODUCT = 'PRODUCT'
-}
 
 export interface IPost extends Document {
-  // 🚨 POLYMORPHIC AUTHOR
   author: Types.ObjectId;
-  authorType: 'User' | 'Business'; 
-  
-  type: PostType;
+  authorType: 'User' | 'Business';
   caption: string;
-  media: string[];
-  tags?: string[],
-  // Product Fields (Required only if type is PRODUCT)
-  productName?: string;
-  category?: string;
-  description?: string;
-  price?: number;
-  stock?: number;
-  size?: string;
+  tags?: string[];
+  media: string[]; // Only used for normal posts
+  
+  // THE LINK
+  product?: Types.ObjectId | IProduct; 
   
   likes: Types.ObjectId[];
   createdAt: Date;
 }
 
-const postSchema = new Schema<IPost>(
-  {
-    author: { 
-      type: Schema.Types.ObjectId, 
-      required: true, 
-      refPath: 'authorType' // 👈 Dynamically looks up User or Business
-    },
-    authorType: { 
-      type: String, 
-      required: true, 
-      enum: ['User', 'Business'] 
-    },
-    type: { 
-      type: String, 
-      enum: Object.values(PostType), 
-      required: true 
-    },
-    caption: { type: String, required: true },
-    media: [{ type: String }],
-    tags: [{ type: String }],
-    // Product specific
-    productName: { type: String },
-    category: { type: String },
-    description: { type: String },
-    price: { type: Number },
-    stock: { type: Number },
-    size: { type: String },
+const postSchema = new Schema<IPost>({
+  author: { type: Schema.Types.ObjectId, required: true, refPath: 'authorType' },
+  authorType: { type: String, required: true, enum: ['User', 'Business'] },
+  caption: { type: String, required: true },
+  tags: [{ type: String }],
+  
+  // Media is optional here because if 'product' is present, 
+  // we will fetch media from the Product model instead.
+  media: [{ type: String }], 
+  
+  product: { type: Schema.Types.ObjectId, ref: 'Product' },
+  
+  likes: [{ type: Schema.Types.ObjectId, ref: 'User' }]
+}, { timestamps: true });
 
-    likes: [{ type: Schema.Types.ObjectId, ref: 'User' }],
-  },
-  { timestamps: true }
-);
-
-// 🛡️ VALIDATION LOGIC
-// Ensure that if it's a PRODUCT, the author MUST be a Business
-postSchema.pre('save', function (next) {
-  if (this.type === PostType.PRODUCT && this.authorType !== 'Business') {
-    return next(new Error('Products must be associated with a Business account.'));
+// --- CASCADING DELETE LOGIC ---
+// If the product is deleted, delete all posts linked to it.
+productSchema.post('findOneAndDelete', async function (doc) {
+  if (doc) {
+    await model('Post').deleteMany({ product: doc._id });
   }
-  next();
 });
 
 export const Post = model<IPost>('Post', postSchema);

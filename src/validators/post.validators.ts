@@ -1,31 +1,61 @@
-// backend/validators/post.validator.ts
 import Joi from 'joi';
 import { createSchema } from './common.schemas';
 
 export const createPostField = {
+  // We keep 'type' to distinguish the intent of the request
   type: Joi.string().valid('POST', 'PRODUCT').required(),
-  caption: Joi.string().required(),
   
-  // 1. Tags: Optional array of strings
+  // Requirement: Caption is required for POST, but optional for a pure PRODUCT listing
+  caption: Joi.when('type', {
+    is: 'POST',
+    then: Joi.string().required().messages({ 'any.required': 'Caption is required for posts.' }),
+    otherwise: Joi.string().optional().allow('')
+  }),
+
   tags: Joi.array().items(Joi.string()).optional().default([]),
 
-  // 2. Media: Required ONLY if type is PRODUCT
+  // For Requirement 6: Linking an existing product
+  productId: Joi.string().optional().allow(null),
+
+  // Media logic: 
+  // 1. Mandatory if creating a new PRODUCT.
+  // 2. Optional if it's a POST (social update).
+  // 3. Not needed if POST is linking an existing productId.
   media: Joi.when('type', {
     is: 'PRODUCT',
     then: Joi.array().items(Joi.string()).min(1).required().messages({
       'array.min': 'Products must have at least one image or video.',
       'any.required': 'Product media is required.'
     }),
-    otherwise: Joi.array().items(Joi.string()).optional() // Optional for regular POST
+    otherwise: Joi.array().items(Joi.string()).optional()
   }),
+
+  // PRODUCT SPECIFIC FIELDS
+  // These are required ONLY when type is 'PRODUCT'
+  productName: Joi.when('type', { 
+    is: 'PRODUCT', 
+    then: Joi.string().required() 
+  }),
+  category: Joi.when('type', { 
+    is: 'PRODUCT', 
+    then: Joi.string().default('General') 
+  }),
+  description: Joi.when('type', { 
+    is: 'PRODUCT', 
+    then: Joi.string().required().messages({ 'any.required': 'Product description is compulsory.' }) 
+  }),
+  price: Joi.when('type', { 
+    is: 'PRODUCT', 
+    then: Joi.number().min(0).required() 
+  }),
+  stock: Joi.when('type', { 
+    is: 'PRODUCT', 
+    then: Joi.number().integer().min(0).required().messages({ 'any.required': 'Stock quantity is required.' }) 
+  }),
+  size: Joi.string().allow('').optional(),
   
-  // Conditional fields for PRODUCT
-  productName: Joi.when('type', { is: 'PRODUCT', then: Joi.string().required() }),
-  category: Joi.when('type', { is: 'PRODUCT', then: Joi.string().required() }),
-  description: Joi.when('type', { is: 'PRODUCT', then: Joi.string().required() }),
-  price: Joi.when('type', { is: 'PRODUCT', then: Joi.number().min(0).required() }),
-  stock: Joi.when('type', { is: 'PRODUCT', then: Joi.number().min(0).required() }),
-  size: Joi.when('type', { is: 'PRODUCT', then: Joi.string().allow('').optional() }),
+  // Flag to tell the controller: "I created a product, now also create a Post for it"
+  publishToFeed: Joi.boolean().default(false)
 };
 
 export const createCommentField = {
@@ -38,17 +68,11 @@ export const createCommentField = {
     displayName: Joi.string()
   }))
 };
+
 export const postSchema = {
-  // .min(1) here ensures the body isn't empty
   createPost: createSchema(createPostField).min(1),
   createComment: createSchema(createCommentField).min(1)
 };
 
 export const createPostSchema = { body: postSchema.createPost };
 export const createCommentSchema = { body: postSchema.createComment };
-
-
-
-
-
-

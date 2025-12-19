@@ -72,8 +72,8 @@ export const updateProfile = asyncHandler(async (req: Request, res: Response): P
   if (coverPicture) updateData.coverPicture = coverPicture;
 
   const user = await User.findByIdAndUpdate(
-    userId, 
-    { $set: updateData }, 
+    userId,
+    { $set: updateData },
     { new: true, runValidators: true }
   );
 
@@ -95,9 +95,9 @@ export const updateBusiness = asyncHandler(async (req: Request, res: Response): 
   const userId = getAuthUserId(req);
   if (!userId) throw new AuthenticationError('User not authenticated');
 
-  const { 
-    businessName, category, about, phone, website, 
-    fullAddress, businessLogo, businessCover, operatingHours 
+  const {
+    businessName, category, about, phone, website,
+    fullAddress, businessLogo, businessCover, operatingHours
   } = req.body;
 
   const updateData = {
@@ -108,7 +108,7 @@ export const updateBusiness = asyncHandler(async (req: Request, res: Response): 
     businessCover,
     contact: { phone, website },
     address: { fullAddress },
-    operatingHours 
+    operatingHours
   };
 
   const business = await Business.findOneAndUpdate(
@@ -122,7 +122,7 @@ export const updateBusiness = asyncHandler(async (req: Request, res: Response): 
   // 🚨 EVENT LOG: Business Info Updated
   eventEmitter.emit('activityLogged', {
     actorId: userId,
-    actionType: 'signup', 
+    actionType: 'signup',
     targetModel: 'User', // Logging against the user's business presence
     targetId: (business._id as Types.ObjectId).toString(),
     targetOwnerId: userId,
@@ -161,7 +161,7 @@ export const convertToBusiness = asyncHandler(async (req: Request, res: Response
     // 🚨 EVENT LOG: Account Upgrade
     eventEmitter.emit('activityLogged', {
       actorId: userId,
-      actionType: 'signup', 
+      actionType: 'signup',
       targetModel: 'User',
       targetId: (business[0]._id as Types.ObjectId).toString(),
       targetOwnerId: userId,
@@ -184,7 +184,15 @@ export const getUserProfile = asyncHandler(async (req: Request, res: Response): 
   );
 
   if (!user) throw new NotFoundError('User not found');
+  
+  const loggedInUserId = getAuthUserId(req); // From your auth middleware
+  
+  const loggedInUser = await User.findById(loggedInUserId);
 
+  if( !loggedInUser ){
+    res.status(404).json({ success: false, message: "No Logged in User." });
+    return;
+  }
   const { Post } = await import('@/models/post-model');
   const business = await Business.findOne({ owner: userId });
 
@@ -192,11 +200,22 @@ export const getUserProfile = asyncHandler(async (req: Request, res: Response): 
     Post.find({ author: userId }).sort({ createdAt: -1 }).limit(10),
   ]);
 
+  // 2. Determine following status
+  // Check if the target user's followers array includes the logged-in user's ID
+  const isFollowing = loggedInUserId
+    ? user.followers.some(id => id.toString() === loggedInUserId)
+    : false;
+
+    const isBookmarked = loggedInUserId
+      ? loggedInUser.bookmarkedBusinesses.some(id => id.toString() === user.businesses[0]?.toString())
+      : false;
   res.status(HTTP_STATUS.OK).json({
     success: true,
     user,
     business,
     related: {
+      isFollowing,    // <--- Add this
+      isBookmarked,
       recentPosts: posts,
       counts: {
         posts: await Post.countDocuments({ author: userId }),

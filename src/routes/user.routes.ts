@@ -4,6 +4,7 @@ import { getCurrentUser, getUserProfile, updateProfile, updateBusiness, convertT
 import { validateRequest } from '@/middleware/validation';
 import { updateProfileSchema } from '@/validators/user.validators';
 import { updateBusinessSchema } from '@/validators/user.validators';
+import { toggleFollow, toggleBookmark } from '@/controllers/interaction.controller';
 
 const router = Router();
 
@@ -16,5 +17,13 @@ router.patch('/profile/update', requireAuth, validateRequest(updateProfileSchema
 
 // Simple JSON route - no multer needed!
 router.patch('/business/update', requireAuth, validateRequest(updateBusinessSchema), updateBusiness);
+router.post("/follow/:targetId", requireAuth, toggleFollow);
 
+/**
+ * @route   POST /api/users/bookmarks/toggle
+ * @desc    Toggle bookmark for Business, Post, or Event
+ * @access  Private
+ */
+
+router.post("/bookmarks/toggle/:targetId", requireAuth, toggleBookmark);
 export default router;
