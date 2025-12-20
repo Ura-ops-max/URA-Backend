@@ -8,6 +8,7 @@ import { Bookmark } from '@/models/bookmark.model';
 import { Types } from 'mongoose';
 import { eventEmitter } from '@/services/event-emitter.services';
 import { Comment } from '@/models/comment-model';
+import { User } from '@/models/user-model';
 
 const getAuthUserId = (req: Request): string | null => {
   const user = (req as any).user;
@@ -18,80 +19,99 @@ const getAuthUserId = (req: Request): string | null => {
 // GET UNIFIED FEED
 export const getUnifiedFeed = asyncHandler(async (req: Request, res: Response): Promise<void> => {
   const currentUserId = getAuthUserId(req);
+  const targetUserId = req.query.userId as string; // Optional ID for viewing a specific profile
 
-  const feed = await Post.find()
+
+  const page = parseInt(req.query.page as string) || 1;
+  const limit = 20;
+  const skip = (page - 1) * limit;
+
+  // ... (Your filter logic here)
+
+
+
+  let posts;
+  let bookmarkedPostIds: string[] = [];
+
+  // 1. Get current user's bookmarks (for the "isBookmarked" flag)
+  if (currentUserId) {
+    const currentUser = await User.findById(currentUserId).select('bookmarkedPosts followingUsers followingBusinesses');
+    if (currentUser) {
+      bookmarkedPostIds = currentUser.bookmarkedPosts.map(id => id.toString());
+    }
+  }
+
+  // 2. LOGIC: Determine which posts to show
+  if (targetUserId) {
+    /** * PROFILE VIEW MODE: Only posts related to the target user
+     * (Posts they authored, liked, or bookmarked)
+     */
+    posts = await Post.find({
+      $or: [
+        { author: new Types.ObjectId(targetUserId) },
+        { likes: new Types.ObjectId(targetUserId) },
+        { _id: { $in: (await User.findById(targetUserId).select('bookmarkedPosts'))?.bookmarkedPosts || [] } }
+      ]
+    });
+  } else if (currentUserId) {
+    /** * MY FEED MODE: Personalized + Global
+     * (Followed users/businesses, own posts, likes, bookmarks + global random)
+     */
+    const user = await User.findById(currentUserId);
+    const following = [...(user?.followingUsers || []), ...(user?.followingBusinesses || [])];
+
+    posts = await Post.find({
+      $or: [
+        { author: { $in: [...following, new Types.ObjectId(currentUserId)] } }, // Following + Self
+        { likes: new Types.ObjectId(currentUserId) }, // Liked
+        { _id: { $in: user?.bookmarkedPosts || [] } }, // Bookmarked
+        {} // This empty object allows "Global" posts to be included in the OR
+      ]
+    });
+  } else {
+    // GUEST MODE: Just global feed
+    posts = await Post.find({});
+  }
+
+  // 3. Populate and Format
+  const feed = await Post.find({ _id: { $in: posts.map(p => p._id) } })
     .sort({ createdAt: -1 })
-    .limit(20)
+    .skip(skip)
+    .limit(limit)
     .populate({
       path: 'author',
-      select: 'username firstName lastName profilePicture businessName businessLogo isVerified'
+      select: '_id username firstName lastName profilePicture businessName businessLogo isVerified'
     })
-    .populate('product') // Populate the product details
+    .populate('product')
     .lean();
-
-  let bookmarkedPostIds: string[] = [];
-  if (currentUserId) {
-    const userBookmarks = await Bookmark.find({ 
-      user: new Types.ObjectId(currentUserId), 
-      targetType: 'Post' 
-    }).select('targetId');
-    bookmarkedPostIds = userBookmarks.map(b => b.targetId.toString());
-  }
 
   const formattedFeed = await Promise.all(feed.map(async (post: any) => {
     const author = post.author;
     const isBusiness = post.authorType === 'Business';
     const hasProduct = !!post.product;
 
-    // Calculate Ratings for Business
-    let ratingData = { rating: 0, reviewCount: 0 };
-    if (isBusiness && author) {
-      const reviews = await Review.find({ 
-        reviewedItem: author._id, 
-        reviewedItemModel: 'Business' 
-      });
-      const total = reviews.reduce((acc, rev) => acc + rev.rating, 0);
-      ratingData = {
-        rating: reviews.length > 0 ? Number((total / reviews.length).toFixed(1)) : 0,
-        reviewCount: reviews.length
-      };
-    }
+    const isLiked = currentUserId ? post.likes.some((id: any) => id.toString() === currentUserId) : false;
+    const commentsCount = await Comment.countDocuments({ postId: post._id });
 
-    const isLiked = currentUserId
-      ? post.likes.some((id: any) => id.toString() === currentUserId)
-      : false;
-
-
-      const commentsCount = await Comment.countDocuments({ postId: post._id });
-
-      // IMPORTANT: Keep response structure intact by merging product info into post root
     return {
       ...post,
-      // If linked to product, override media and include product fields
       type: hasProduct ? 'PRODUCT' : 'POST',
-      media: hasProduct ? post.product.media : post.media,
-      productName: hasProduct ? post.product.name : null,
-      price: hasProduct ? post.product.price : null,
-      stock: hasProduct ? post.product.stock : null,
-      category: hasProduct ? post.product.category : null,
-      description: hasProduct ? post.product.description : null,
-      
-      // Standard Display Fields
+      authorId: author?._id,
       displayName: isBusiness ? author?.businessName : `${author?.firstName} ${author?.lastName}`,
       displayAvatar: isBusiness ? author?.businessLogo : author?.profilePicture,
       username: isBusiness ? null : author?.username,
       likesCount: post.likes.length,
-      commentsCount: commentsCount,
+      commentsCount,
       isBookmarked: bookmarkedPostIds.includes(post._id.toString()),
-      isLiked: isLiked,
+      isLiked,
       isVerified: author?.isVerified || false,
-      rating: isBusiness ? ratingData.rating : null,
-      reviewCount: isBusiness ? ratingData.reviewCount : null,
     };
   }));
 
   res.json({ success: true, posts: formattedFeed });
 });
+
+
 
 // CREATE POST / PRODUCT
 export const createPost = asyncHandler(async (req: Request, res: Response): Promise<void> => {

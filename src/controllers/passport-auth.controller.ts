@@ -57,8 +57,18 @@ export const register = asyncHandler(async (req: Request, res: Response): Promis
     targetOwnerId: (user._id as Types.ObjectId).toString(),
   });
 
-  await sendVerificationEmail(email, token);
+  // backend/controllers/auth.controller.ts
 
+  // ... user creation code ...
+
+  try {
+    await sendVerificationEmail(email, token);
+  } catch (emailError) {
+    // We log the error so you know it failed, but we DON'T stop the response
+    console.error("Verification email failed to send:", emailError);
+  }
+
+  // Always return success if the user was created
   res.status(HTTP_STATUS.CREATED).json({
     success: true,
     message: 'Registration successful. Please check your email to verify your account.',
@@ -72,7 +82,14 @@ export const login = asyncHandler(
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     passport.authenticate('local', { session: false }, async (err: Error, user: any, info: any) => {
       if (err) return next(err);
-      if (!user) throw new AuthenticationError(info?.message || 'Invalid credentials');
+      if (!user) {
+        return res.status(401).json({
+          success: false,
+          message: info?.message || 'Invalid credentials',
+          code: 'AUTHENTICATION_ERROR'
+        });
+      }
+      // if (!user) throw new AuthenticationError(info?.message || 'Invalid credentials');
 
       user.lastLoginAt = new Date();
       await user.save();
@@ -89,20 +106,10 @@ export const login = asyncHandler(
       const accessToken = generateAccessToken({ userId: user.id, email: user.email });
       const refreshToken = generateRefreshToken({ userId: user.id, email: user.email });
 
-      res.status(HTTP_STATUS.OK).json({
+      return res.status(200).json({
         success: true,
         message: 'Login successful',
-        data: {
-          accessToken,
-          refreshToken,
-          user: {
-            id: user.id,
-            email: user.email,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            businessName: user.businessName,
-          },
-        },
+        data: { accessToken, refreshToken, user }
       });
     })(req, res, next);
   }
@@ -192,7 +199,7 @@ export const logout = asyncHandler(async (req: Request, res: Response): Promise<
       const decoded = verifyToken(accessToken) as any;
       const expiresAt = new Date(decoded.exp * 1000);
       await blacklistToken(accessToken, 'access', user.id, expiresAt);
-    } catch (e) {}
+    } catch (e) { }
   }
 
   if (refreshToken) {
@@ -200,7 +207,7 @@ export const logout = asyncHandler(async (req: Request, res: Response): Promise<
       const decoded = verifyToken(refreshToken, true) as any;
       const expiresAt = new Date(decoded.exp * 1000);
       await blacklistToken(refreshToken, 'refresh', user.id, expiresAt);
-    } catch (e) {}
+    } catch (e) { }
   }
 
   res.status(HTTP_STATUS.OK).json({ success: true, message: 'Logged out successfully' });
@@ -215,7 +222,7 @@ export const checkUsernameAvailability = asyncHandler(async (req: Request, res: 
 
   const normalizedUsername = username.trim().toLowerCase();
   const exists = await User.findOne({ username: normalizedUsername });
-  
+
   res.status(HTTP_STATUS.OK).json({
     available: !exists,
     message: exists ? 'This username is already taken.' : 'Username is available.',

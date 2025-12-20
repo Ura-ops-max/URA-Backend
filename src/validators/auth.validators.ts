@@ -18,7 +18,7 @@ export const authSchemas = {
   }),
 
   login: createSchema({
-    email: emailSchema,
+    identifier: requiredStringSchema('Username or Email'),
     password: requiredStringSchema('Password'),
   }),
 

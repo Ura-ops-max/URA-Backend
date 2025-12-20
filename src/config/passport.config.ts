@@ -14,25 +14,35 @@ import { isTokenBlacklisted } from '@/services/token-blacklist.service';
 passport.use(
   new LocalStrategy(
     {
-      usernameField: 'email',
+      // 1. We change the field name to 'identifier' to match your frontend input
+      usernameField: 'identifier', 
       passwordField: 'password',
     },
-    async (email, password, done) => {
+    async (identifier, password, done) => {
       try {
-        const user = await User.findOne({ email }).select('+password +twoFactorSecret');
+        // 2. Search for the user where the input matches either email OR username
+        const user = await User.findOne({
+          $or: [
+            { email: identifier.toLowerCase().trim() },
+            { username: identifier.trim() }
+          ],
+        }).select('+password +twoFactorSecret');
 
+        // 3. Check if user exists and has a password set
         if (!user || !user.password) {
           return done(null, false, { message: 'Invalid credentials' });
         }
 
+        // 4. Use bcrypt to compare the plain text password with the hashed version
         const isPasswordValid = await bcrypt.compare(password, user.password);
+        
         if (!isPasswordValid) {
           return done(null, false, { message: 'Invalid credentials' });
         }
 
-        // Check if email is verified (optional - can be disabled for dev)
-        // if (!user.emailVerified) {
-        //   return done(null, false, { message: 'Please verify your email before logging in' });
+        // Optional: Check account status (e.g., emailVerified or isActive)
+        // if (!user.isActive) {
+        //   return done(null, false, { message: 'Account is disabled' });
         // }
 
         return done(null, user);
