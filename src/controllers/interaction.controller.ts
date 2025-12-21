@@ -5,10 +5,12 @@ import { Bookmark } from "@/models/bookmark.model";
 import { Comment } from "@/models/comment-model";
 import { Post } from "@/models/post-model";
 import { Request, Response } from 'express';
-import { Types } from 'mongoose'; // Added for ID casting
+import { Model, Types } from 'mongoose'; // Added for ID casting
 import { eventEmitter } from '@/services/event-emitter.services';
 import { Business } from "@/models/business-model";
 import { User } from "@/models/user-model";
+import { Product } from "@/models/product-model";
+import { Wishlist } from "@/models/wishlist-model";
 
 /**
  * Helper to safely extract user ID
@@ -19,9 +21,10 @@ const getAuthUserId = (req: Request): string | null => {
   return id ? id.toString() : null;
 };
 
-// Toggle Like on a Post
+// Toggle Like (Supports Post or Product)
+// Route: PATCH /api/likes/:targetType/:targetId
 export const toggleLike = asyncHandler(async (req: Request, res: Response): Promise<void> => {
-  const { postId } = req.params;
+  const { targetType, targetId } = req.params;
   const userId = getAuthUserId(req);
 
   if (!userId) {
@@ -29,31 +32,42 @@ export const toggleLike = asyncHandler(async (req: Request, res: Response): Prom
     return;
   }
 
-  const post = await Post.findById(postId);
-  if (!post) {
-    res.status(404).json({ message: "Post not found" });
+  // Cast as Model<any> to fix the "not callable" error
+  const TargetModel = (targetType === 'product' ? Product : Post) as Model<any>;
+  const ownerField = targetType === 'product' ? 'business' : 'author';
+
+  const doc = await TargetModel.findById(targetId);
+  if (!doc) {
+    res.status(404).json({ message: `${targetType} not found` });
     return;
   }
 
-  const isLiked = post.likes.some(id => id.toString() === userId);
+  // Mongoose documents in TS need to be treated as 'any' or a shared interface
+  // when the model is dynamic to allow array methods on 'likes'
+  const postOrProduct = doc as any;
+  const isLiked = postOrProduct.likes.some((id: any) => id.toString() === userId);
 
   if (isLiked) {
-    post.likes = post.likes.filter((id) => id.toString() !== userId);
+    postOrProduct.likes = postOrProduct.likes.filter((id: any) => id.toString() !== userId);
   } else {
-    post.likes.push(new Types.ObjectId(userId) as any);
+    postOrProduct.likes.push(new Types.ObjectId(userId));
 
-    // Log activity
     eventEmitter.emit('activityLogged', {
       actorId: userId,
       actionType: 'like',
-      targetModel: 'Post',
-      targetId: (post._id as Types.ObjectId).toString(),
-      targetOwnerId: post.author.toString(),
+      targetModel: targetType === 'product' ? 'Product' : 'Post',
+      targetId: postOrProduct._id.toString(),
+      targetOwnerId: postOrProduct[ownerField].toString(),
     });
   }
 
-  await post.save();
-  res.json({ success: true, isLiked: !isLiked, likesCount: post.likes.length });
+  await postOrProduct.save();
+  
+  res.json({ 
+    success: true, 
+    isLiked: !isLiked, 
+    likesCount: postOrProduct.likes.length 
+  });
 });
 
 
@@ -167,7 +181,6 @@ export const toggleCommentLike = asyncHandler(async (req: Request, res: Response
 });
 
 
-
 export const toggleFollow = asyncHandler(async (req: Request, res: Response): Promise<void> => {
 
   try {
@@ -235,5 +248,63 @@ export const toggleFollow = asyncHandler(async (req: Request, res: Response): Pr
   } catch (error: any) {
     res.status(500).json({ message: "Server error", error: error.message });
     return
+  }
+});
+
+
+// Toggle Wishlist
+// Route: PATCH /api/products/wishlist/:productId
+export const toggleWishlist = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const { productId } = req.params;
+  const userId = getAuthUserId(req);
+
+  if (!userId) {
+    res.status(401).json({ message: "User not authenticated" });
+    return;
+  }
+
+  // 1. Check if product exists
+  const product = await Product.findById(productId);
+  if (!product) {
+    res.status(404).json({ message: "Product not found" });
+    return;
+  }
+
+  // 2. Check if already in wishlist
+  const existingWishlist = await Wishlist.findOne({ 
+    user: userId, 
+    product: productId 
+  });
+
+  if (existingWishlist) {
+    // Remove from wishlist
+    await Wishlist.deleteOne({ _id: existingWishlist._id });
+    
+    res.json({ 
+      success: true, 
+      isWishlisted: false, 
+      message: "Removed from wishlist" 
+    });
+  } else {
+    // Add to wishlist
+    await Wishlist.create({ 
+      user: userId, 
+      product: productId 
+    });
+
+    // Optional: Log activity for business analytics
+    eventEmitter.emit('activityLogged', {
+      actorId: userId,
+      actionType: 'wishlist',
+      targetModel: 'Product',
+      targetId: productId,
+      targetOwnerId: product.business.toString(),
+    });
+
+    res.json({ 
+      success: true, 
+      isWishlisted: true, 
+      message: "Added to wishlist" 
+    });
   }
 });

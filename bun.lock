@@ -36,6 +36,7 @@
         "winston-daily-rotate-file": "^5.0.0",
       },
       "devDependencies": {
+        "@faker-js/faker": "^10.1.0",
         "@types/cors": "^2.8.17",
         "@types/express": "^5.0.0",
         "@types/jest": "^29.5.14",
@@ -242,6 +243,8 @@
     "@eslint/object-schema": ["@eslint/object-schema@2.1.7", "", {}, ""],
 
     "@eslint/plugin-kit": ["@eslint/plugin-kit@0.4.0", "", { "dependencies": { "@eslint/core": "^0.16.0", "levn": "^0.4.1" } }, ""],
+
+    "@faker-js/faker": ["@faker-js/faker@10.1.0", "", {}, "sha512-C3mrr3b5dRVlKPJdfrAXS8+dq+rq8Qm5SNRazca0JKgw1HQERFmrVb0towvMmw5uu8hHKNiQasMaR/tydf3Zsg=="],
 
     "@hapi/hoek": ["@hapi/hoek@9.3.0", "", {}, ""],
 

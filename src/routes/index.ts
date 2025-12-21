@@ -6,6 +6,7 @@ import userRoutes from '@/routes/user.routes';
 import activityRoutes from '@/routes/activity.routes';
 import bookmarkRoutes from '@/routes/bookmark.routes';
 import postRouted from '@/routes/post.routes';
+import productRouted from '@/routes/product.routes';
 
 const router = Router();
 
@@ -15,5 +16,6 @@ router.use('/user', userRoutes);
 router.use('/activity', activityRoutes);
 router.use('/bookmark', bookmarkRoutes);
 router.use('/post', postRouted);
+router.use('/product', productRouted);
 
 export default router;

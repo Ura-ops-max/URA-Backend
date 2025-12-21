@@ -109,6 +109,8 @@ test-output/
 # Database files
 *.sqlite
 *.db
+seed.ts
 
 # Docker
 .dockerignore
+

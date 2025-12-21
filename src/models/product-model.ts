@@ -10,6 +10,8 @@ export interface IProduct extends Document {
   size?: string;
   media: string[]; // Master images
   createdAt: Date;
+  likes: Types.ObjectId[];
+
 }
 
 const productSchema = new Schema<IProduct>({
@@ -20,7 +22,9 @@ const productSchema = new Schema<IProduct>({
   price: { type: Number, required: true },
   stock: { type: Number, required: true },
   size: { type: String },
-  media: [{ type: String, required: true }] // Product must have images
+  media: [{ type: String, required: true }], // Product must have images
+  likes: [{ type: Schema.Types.ObjectId, ref: 'User' }]
+
 }, { timestamps: true });
 
 export const Product = model<IProduct>('Product', productSchema);

@@ -225,3 +225,106 @@ export const getUserProfile = asyncHandler(async (req: Request, res: Response): 
     },
   });
 });
+
+export const getBusinessProfile = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const { businessId } = req.params;
+  const loggedInUserId = getAuthUserId(req);
+
+  // 1. Find the Business first
+  const business = await Business.findById(businessId);
+  if (!business) throw new NotFoundError('Business not found');
+
+  // 2. Find the owner (User) of this business
+  const user = await User.findById(business.owner).select(
+    '-password -emailVerificationToken -emailVerificationExpires -twoFactorSecret -mfaRecoveryCodes'
+  );
+  if (!user) throw new NotFoundError('Business owner not found');
+
+  // 3. Fetch logged-in user for status checks (Following/Bookmarking)
+  const loggedInUser = loggedInUserId ? await User.findById(loggedInUserId) : null;
+
+  const { Post } = await import('@/models/post-model');
+
+  // 4. Gather related data (Posts and Counts)
+  const [posts, postCount] = await Promise.all([
+    Post.find({ author: businessId, authorType: 'Business' }).sort({ createdAt: -1 }).limit(10),
+    Post.countDocuments({ author: businessId, authorType: 'Business' })
+  ]);
+
+  // 5. Determine following/bookmark status
+  // For a business, we check the business.followers array
+  const isFollowing = loggedInUserId
+    ? business.followers.some(id => id.toString() === loggedInUserId)
+    : false;
+
+  // Check if this business ID is in the logged-in user's bookmark list
+  const isBookmarked = loggedInUser
+    ? loggedInUser.bookmarkedBusinesses.some(id => id.toString() === businessId)
+    : false;
+
+  res.status(HTTP_STATUS.OK).json({
+    success: true,
+    user,      // The owner
+    business,  // The business details
+    related: {
+      isFollowing,
+      isBookmarked,
+      recentPosts: posts,
+      counts: {
+        posts: postCount,
+        followers: business.followers.length,
+        // Since we are on a business page, 'following' usually refers to the owner's reach
+        following: user.followingUsers.length + user.followingBusinesses.length,
+      },
+    },
+  });
+});
+
+// GET /api/users/:targetId/social?type=followers|following
+export const getFollowList = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const { targetId } = req.params;
+  const { type } = req.query; // "followers" | "following"
+  const currentUserId = getAuthUserId(req);
+
+  // 1. Fetch the user with appropriate population
+  const user = await User.findById(targetId)
+    .populate({
+      path: type === 'followers' ? 'followers' : 'followingUsers followingBusinesses',
+      select: '_id firstName lastName username profilePicture businessName businessLogo followers'
+    })
+    .lean();
+
+  if (!user) {
+    res.status(404).json({ message: "User not found" });
+    return;
+  }
+
+  // 2. Extract and Label the data
+  let rawList: any[] = [];
+  if (type === 'followers') {
+    rawList = user.followers.map(u => ({ ...u, kind: 'User' }));
+  } else {
+    // Combine Following Users and Following Businesses
+    const users = (user.followingUsers || []).map(u => ({ ...u, kind: 'User' }));
+    const businesses = (user.followingBusinesses || []).map(b => ({ ...b, kind: 'Business' }));
+    rawList = [...users, ...businesses];
+  }
+
+  // 3. Transform into a Unified Shape for the Frontend Card
+  const formattedList = rawList.map((item: any) => {
+    const isBusiness = item.kind === 'Business';
+    
+    return {
+      _id: item._id,
+      firstName: isBusiness ? item.businessName : item.firstName,
+      lastName: isBusiness ? '' : item.lastName,
+      username: isBusiness ? 'Business Account' : item.username,
+      avatar: isBusiness ? item.businessLogo : item.profilePicture,
+      isBusiness,
+      // Check if the LOGGED-IN user follows this specific item
+      isFollowing: currentUserId ? item.followers?.some((id: any) => id.toString() === currentUserId) : false
+    };
+  });
+
+  res.json({ success: true, users: formattedList });
+});
