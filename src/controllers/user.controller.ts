@@ -7,6 +7,12 @@ import { Business } from '@/models/business-model';
 import { eventEmitter } from '@/services/event-emitter.services';
 import mongoose, { Types } from "mongoose";
 
+// Define a simple interface for what a Business looks like to satisfy the ID error
+interface IBusinessDoc {
+  _id: Types.ObjectId;
+  // add other fields if you need them for the emitter
+}
+
 /**
  * Helper to safely extract user ID
  */
@@ -131,48 +137,64 @@ export const updateBusiness = asyncHandler(async (req: Request, res: Response): 
   res.status(200).json({ success: true, business });
 });
 
+
 export const convertToBusiness = asyncHandler(async (req: Request, res: Response): Promise<void> => {
   const userId = getAuthUserId(req);
   if (!userId) throw new AuthenticationError('User not authenticated');
 
   const user = await User.findById(userId);
-  if (user?.isBusinessOwner) {
-    res.status(400).json({ success: false, message: "Already a business account." });
+  if (!user || user.isBusinessOwner) {
+    res.status(400).json({ success: false, message: "Invalid request or already a business." });
     return;
   }
 
-  const session = await mongoose.startSession();
-  session.startTransaction();
+  // Simple toggle: Local = false, Production = true
+  const useTx = process.env.USE_TRANSACTIONS === 'true';
+  const session = useTx ? await mongoose.startSession() : null;
 
   try {
+    if (session) session.startTransaction();
+
+    // 1. Update User
     await User.findByIdAndUpdate(userId, { isBusinessOwner: true }, { session });
 
-    const business = await Business.create([{
+    // 2. Create Business
+    const businessData = {
       owner: userId,
-      businessName: `${user?.firstName || 'My'}'s Business`,
+      businessName: `${user.firstName}'s Business`,
       about: "Update your business description here.",
       category: "Other",
-      contact: { email: user?.email },
+      contact: { email: user.email },
       location: { type: "Point", coordinates: [0, 0] }
-    }], { session });
+    };
 
-    await session.commitTransaction();
+    // Handle the difference in return types between session vs no-session
+    let newBusiness;
+    if (session) {
+      const result = await Business.create([businessData], { session });
+      newBusiness = result[0];
+    } else {
+      newBusiness = await Business.create(businessData);
+    }
 
-    // 🚨 EVENT LOG: Account Upgrade
+    if (session) await session.commitTransaction();
+
+    // 🚨 Log Activity
     eventEmitter.emit('activityLogged', {
       actorId: userId,
       actionType: 'signup',
-      targetModel: 'User',
-      targetId: (business[0]._id as Types.ObjectId).toString(),
+      targetModel: 'Business',
+      targetId: (newBusiness._id as Types.ObjectId).toString(),
       targetOwnerId: userId,
     });
 
     res.status(200).json({ success: true, message: "Account upgraded successfully." });
+
   } catch (error) {
-    await session.abortTransaction();
-    throw error;
+    if (session) await session.abortTransaction();
+    throw error; // This will trigger your global error handler
   } finally {
-    session.endSession();
+    if (session) session.endSession();
   }
 });
 
