@@ -62,11 +62,11 @@ export const toggleLike = asyncHandler(async (req: Request, res: Response): Prom
   }
 
   await postOrProduct.save();
-  
-  res.json({ 
-    success: true, 
-    isLiked: !isLiked, 
-    likesCount: postOrProduct.likes.length 
+
+  res.json({
+    success: true,
+    isLiked: !isLiked,
+    likesCount: postOrProduct.likes.length
   });
 });
 
@@ -217,9 +217,12 @@ export const toggleFollow = asyncHandler(async (req: Request, res: Response): Pr
     // 2. Convert string to ObjectId for the comparison
     const targetObjectId = new Types.ObjectId(targetId);
 
-    // 3. Perform the check
-    const isAlreadyFollowing = user[followerArray].includes(targetObjectId);
+    // Inside your toggleFollow controller
+    const isAlreadyFollowing = user[followerArray].some(
+      (id) => id.toString() === targetId
+    );
 
+    
     if (isAlreadyFollowing) {
       // --- UNFOLLOW LOGIC ---
       await User.findByIdAndUpdate(userId, { $pull: { [followerArray]: targetId } });
@@ -271,25 +274,25 @@ export const toggleWishlist = asyncHandler(async (req: Request, res: Response): 
   }
 
   // 2. Check if already in wishlist
-  const existingWishlist = await Wishlist.findOne({ 
-    user: userId, 
-    product: productId 
+  const existingWishlist = await Wishlist.findOne({
+    user: userId,
+    product: productId
   });
 
   if (existingWishlist) {
     // Remove from wishlist
     await Wishlist.deleteOne({ _id: existingWishlist._id });
-    
-    res.json({ 
-      success: true, 
-      isWishlisted: false, 
-      message: "Removed from wishlist" 
+
+    res.json({
+      success: true,
+      isWishlisted: false,
+      message: "Removed from wishlist"
     });
   } else {
     // Add to wishlist
-    await Wishlist.create({ 
-      user: userId, 
-      product: productId 
+    await Wishlist.create({
+      user: userId,
+      product: productId
     });
 
     // Optional: Log activity for business analytics
@@ -301,10 +304,10 @@ export const toggleWishlist = asyncHandler(async (req: Request, res: Response): 
       targetOwnerId: product.business.toString(),
     });
 
-    res.json({ 
-      success: true, 
-      isWishlisted: true, 
-      message: "Added to wishlist" 
+    res.json({
+      success: true,
+      isWishlisted: true,
+      message: "Added to wishlist"
     });
   }
 });

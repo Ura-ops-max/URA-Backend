@@ -308,43 +308,67 @@ export const getFollowList = asyncHandler(async (req: Request, res: Response): P
   const { type } = req.query; // "followers" | "following"
   const currentUserId = getAuthUserId(req);
 
-  // 1. Fetch the user with appropriate population
-  const user = await User.findById(targetId)
+  // 1. Determine if target is User or Business
+  let target: any = await User.findById(targetId)
     .populate({
       path: type === 'followers' ? 'followers' : 'followingUsers followingBusinesses',
       select: '_id firstName lastName username profilePicture businessName businessLogo followers'
     })
     .lean();
 
-  if (!user) {
-    res.status(404).json({ message: "User not found" });
+  let isBusinessTarget = false;
+
+  // 2. If not found in User, check Business collection
+  if (!target) {
+    target = await Business.findById(targetId)
+      .populate({
+        path: 'followers', // Businesses ONLY have followers
+        select: '_id firstName lastName username profilePicture'
+      })
+      .lean();
+    
+    if (target) isBusinessTarget = true;
+  }
+
+  if (!target) {
+    res.status(404).json({ message: "Entity not found" });
     return;
   }
 
-  // 2. Extract and Label the data
+  // 3. Logic Guard: Businesses don't "follow" anyone
+  if (isBusinessTarget && type === 'following') {
+    res.json({ success: true, users: [], message: "Businesses do not follow entities." });
+    return;
+  }
+
+  // 4. Extract raw data based on context
   let rawList: any[] = [];
+
   if (type === 'followers') {
-    rawList = user.followers.map(u => ({ ...u, kind: 'User' }));
+    // Both User and Business have 'followers' (which are always Users)
+    rawList = (target.followers || []).map((u: any) => ({ ...u, kind: 'User' }));
   } else {
-    // Combine Following Users and Following Businesses
-    const users = (user.followingUsers || []).map(u => ({ ...u, kind: 'User' }));
-    const businesses = (user.followingBusinesses || []).map(b => ({ ...b, kind: 'Business' }));
+    // This part only runs for User targets (following list)
+    const users = (target.followingUsers || []).map((u: any) => ({ ...u, kind: 'User' }));
+    const businesses = (target.followingBusinesses || []).map((b: any) => ({ ...b, kind: 'Business' }));
     rawList = [...users, ...businesses];
   }
 
-  // 3. Transform into a Unified Shape for the Frontend Card
+  // 5. Unified Transformation
   const formattedList = rawList.map((item: any) => {
-    const isBusiness = item.kind === 'Business';
+    const isItemBusiness = item.kind === 'Business';
     
     return {
       _id: item._id,
-      firstName: isBusiness ? item.businessName : item.firstName,
-      lastName: isBusiness ? '' : item.lastName,
-      username: isBusiness ? 'Business Account' : item.username,
-      avatar: isBusiness ? item.businessLogo : item.profilePicture,
-      isBusiness,
-      // Check if the LOGGED-IN user follows this specific item
-      isFollowing: currentUserId ? item.followers?.some((id: any) => id.toString() === currentUserId) : false
+      firstName: isItemBusiness ? item.businessName : item.firstName,
+      lastName: isItemBusiness ? '' : item.lastName,
+      username: isItemBusiness ? 'Business Account' : (item.username || 'user'),
+      avatar: isItemBusiness ? item.businessLogo : item.profilePicture,
+      isBusiness: isItemBusiness,
+      // Check if the LOGGED-IN user is in the followers array of this specific item
+      isFollowing: currentUserId 
+        ? item.followers?.some((id: any) => id.toString() === currentUserId.toString()) 
+        : false
     };
   });
 
