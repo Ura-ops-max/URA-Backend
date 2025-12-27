@@ -32,6 +32,7 @@
         "qrcode": "^1.5.4",
         "socket.io": "^4.8.1",
         "speakeasy": "^2.0.0",
+        "uuid": "^13.0.0",
         "winston": "^3.15.0",
         "winston-daily-rotate-file": "^5.0.0",
       },
@@ -1438,7 +1439,7 @@
 
     "utils-merge": ["utils-merge@1.0.1", "", {}, ""],
 
-    "uuid": ["uuid@9.0.1", "", { "bin": "dist/bin/uuid" }, ""],
+    "uuid": ["uuid@13.0.0", "", { "bin": { "uuid": "dist-node/bin/uuid" } }, "sha512-XQegIaBTVUjSHliKqcnFqYypAd4S+WCYt5NIeRs6w/UAry7z8Y9j5ZwRRL4kzq9U3sD6v+85er9FvkEaBpji2w=="],
 
     "v8-compile-cache-lib": ["v8-compile-cache-lib@3.0.1", "", {}, ""],
 
@@ -1564,7 +1565,11 @@
 
     "finalhandler/debug": ["debug@2.6.9", "", { "dependencies": { "ms": "2.0.0" } }, ""],
 
+    "gaxios/uuid": ["uuid@9.0.1", "", { "bin": "dist/bin/uuid" }, ""],
+
     "google-auth-library/jws": ["jws@4.0.0", "", { "dependencies": { "jwa": "^2.0.0", "safe-buffer": "^5.0.1" } }, ""],
+
+    "googleapis-common/uuid": ["uuid@9.0.1", "", { "bin": "dist/bin/uuid" }, ""],
 
     "gtoken/jws": ["jws@4.0.0", "", { "dependencies": { "jwa": "^2.0.0", "safe-buffer": "^5.0.1" } }, ""],
 

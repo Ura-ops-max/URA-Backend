@@ -15,16 +15,19 @@ passport.use(
   new LocalStrategy(
     {
       // 1. We change the field name to 'identifier' to match your frontend input
-      usernameField: 'identifier', 
+      usernameField: 'identifier',
       passwordField: 'password',
     },
     async (identifier, password, done) => {
       try {
         // 2. Search for the user where the input matches either email OR username
+        // Normalize the input once to keep the query clean
+        const normalizedIdentifier = identifier.toLowerCase().trim();
+
         const user = await User.findOne({
           $or: [
-            { email: identifier.toLowerCase().trim() },
-            { username: identifier.trim() }
+            { email: normalizedIdentifier },
+            { username: normalizedIdentifier }
           ],
         }).select('+password +twoFactorSecret');
 
@@ -35,7 +38,7 @@ passport.use(
 
         // 4. Use bcrypt to compare the plain text password with the hashed version
         const isPasswordValid = await bcrypt.compare(password, user.password);
-        
+
         if (!isPasswordValid) {
           return done(null, false, { message: 'Invalid credentials' });
         }

@@ -6,20 +6,19 @@ interface IPoint {
   coordinates: [number, number]; // [longitude, latitude]
 }
 
-// Structure for operating hours
 interface IOperatingHour {
   day: 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday';
-  open: string; // e.g., "09:00"
-  close: string; // e.g., "17:00"
-  isClosed?: boolean; // To mark as closed for the day
+  open: string;
+  close: string;
+  isClosed?: boolean; 
 }
 
 export interface IBusiness extends Document {
-  owner: Types.ObjectId; // Ref to User
+  owner: Types.ObjectId;
   businessName: string;
   about: string;
   tagline?: string;
-  category: 'Restaurant' | 'Fashion' | 'Auto Repair' | 'Stores' | 'Beauty' | 'Other';
+  category?: string; // Use string to stay flexible with your API-based categories
   businessLogo?: string;
   businessCover?: string;
   contact: {
@@ -36,15 +35,16 @@ export interface IBusiness extends Document {
     city: string;
     state: string;
     country: string;
-    fullAddress: string; // For display
+    fullAddress: string;
   };
-  isVerified: Boolean;
-  location?: IPoint; // For geospatial queries
+  isVerified: boolean;
+  location?: IPoint;
   operatingHours: IOperatingHour[];
-  followers: Types.ObjectId[]; // Refs to Users
-  likes: Types.ObjectId[];
+  followers: Types.ObjectId[];
+  likes: Types.ObjectId[]; // Added to match schema
+  averageRating: number;   // Added
+  totalReviews: number;    // Added
   loanEligibility: number;
-  // Vector field for semantic search on business descriptions
   descriptionVector?: number[];
 }
 
@@ -54,17 +54,17 @@ const businessSchema = new Schema<IBusiness>(
     businessName: { type: String, required: true, trim: true },
     about: { type: String },
     tagline: { type: String },
-    category: {
-      type: String,
-      enum: ['Restaurant', 'Fashion', 'Auto Repair', 'Stores', 'Beauty', 'Other'],
-      required: true,
-    },
+    category: { type: String, required: false }, 
     businessLogo: { type: String },
     businessCover: { type: String },
     contact: {
       phone: { type: String },
       email: { type: String },
       website: { type: String },
+      instagram: { type: String },
+      x: { type: String },
+      facebook: { type: String },
+      whatsapp: { type: String },
     },
     address: {
       street: { type: String },
@@ -88,26 +88,34 @@ const businessSchema = new Schema<IBusiness>(
         day: { type: String },
         open: { type: String },
         close: { type: String },
+        isClosed: { type: Boolean, default: false } // Added for "Open Now" logic
       },
     ],
     isVerified: { type: Boolean, default: false },
     followers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+    likes: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+    
+    // RATING FIELDS (Now correctly placed inside schema fields)
+    averageRating: { 
+      type: Number, 
+      default: 0, 
+      min: 0, 
+      max: 5, 
+      index: true 
+    },
+    totalReviews: { 
+      type: Number, 
+      default: 0 
+    },
+
     loanEligibility: { type: Number, default: 0 },
-    descriptionVector: { type: [Number], select: false }, // Store embedding
+    descriptionVector: { type: [Number], select: false },
   },
   { timestamps: true }
 );
 
-// Create a 2dsphere index for geospatial queries
+// Indexes
 businessSchema.index({ location: '2dsphere' });
-
-// Create an index for vector search (assuming MongoDB Atlas)
-// You would create this in Atlas UI or via a command
-/*
-businessSchema.index(
-  { descriptionVector: "vector" },
-  { "vectorSearchOptions": { "dimensions": 1536, "similarity": "cosine" } }
-);
-*/
+businessSchema.index({ businessName: 'text', about: 'text', tagline: 'text' });
 
 export const Business = model<IBusiness>('Business', businessSchema);

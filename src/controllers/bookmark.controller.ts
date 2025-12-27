@@ -1,60 +1,73 @@
+
 import { Request, Response } from 'express';
-import { Bookmark } from '@/models/bookmark.model';
+import { User } from '@/models/user-model';
+import { Post } from '../models/post-model';
+import { Business } from '../models/business-model';
 import { asyncHandler } from '@/middleware/errorHandler';
 
-export const getBookmarkList = asyncHandler(async (req: Request, res: Response) => {
-  const userId = (req as any).user.id;
+export const getMyBookmarks = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const { type } = req.query; // 'Post' or 'Business'
+  const userId = (req as any).user?._id;
 
-  const bookmarks = await Bookmark.find({ user: userId })
-    .populate({
-      path: 'targetId',
-      // We populate fields that exist in both or handle them in the map
-      select: 'title content username profilePicture bio firstName lastName', 
-    })
-    .sort({ createdAt: -1 })
-    .limit(10);
+  if (!userId) {
+    res.status(401).json({ message: "User not authenticated" });
+    return;
+  }
 
-  const formattedBookmarks = bookmarks.map((bm: any) => {
-    const isPost = bm.targetType === 'Post';
-    const target = bm.targetId;
+  const isPost = type === 'Post';
+  const bookmarkField = isPost ? 'bookmarkedPosts' : 'bookmarkedBusinesses';
 
+  // 1. Create a base population object
+  const populationOptions: any = {
+    path: bookmarkField,
+  };
+
+  // 2. Only add the nested 'populate' key if it's a Post
+  // This avoids passing 'undefined' and keeps TypeScript happy
+  if (isPost) {
+    populationOptions.populate = [
+      {
+        path: 'author',
+        select: '_id businessName firstName lastName profilePicture businessLogo isVerified'
+      },
+      {
+        path: 'product'
+      }
+    ];
+  }
+
+  // 3. Execute the query
+  const userWithBookmarks = await User.findById(userId)
+    .populate(populationOptions)
+    .lean();
+
+  if (!userWithBookmarks) {
+    res.status(404).json({ message: "User not found" });
+    return;
+  }
+
+  // Access the dynamic field safely
+  const rawResults = (userWithBookmarks as any)[bookmarkField] || [];
+
+  // 4. Format for the frontend
+  const formattedResults = rawResults.map((item: any) => {
+    if (isPost) {
+      const isBusinessAuthor = item.authorType === 'Business';
+      return {
+        ...item,
+        type: item.product ? 'PRODUCT' : 'SOCIAL',
+        authorId: item.author?._id,
+        displayName: isBusinessAuthor ? item.author?.businessName : `${item.author?.firstName} ${item.author?.lastName}`,
+        displayAvatar: item.author?.businessLogo || item.author?.profilePicture,
+        isVerified: item.author?.isVerified || false,
+        isBookmarked: true
+      };
+    }
     return {
-      id: bm._id,
-      // If post: use title. If user: use username or full name.
-      name: isPost ? target?.title : (target?.username || `${target?.firstName} ${target?.lastName}`),
-      // If post: use content snippet. If user: use bio or "User Profile".
-      description: isPost 
-        ? target?.content?.substring(0, 50) + '...' 
-        : (target?.bio || 'View Profile'),
-      avatar: isPost 
-        ? `https://ui-avatars.com/api/?name=${target?.title}` // Or post thumbnail
-        : (target?.profilePicture || `https://ui-avatars.com/api/?name=${target?.username}`)
+      ...item,
+      isBookmarked: true
     };
   });
 
-  res.status(200).json({ success: true, bookmarks: formattedBookmarks });
+  res.status(200).json(formattedResults);
 });
-
-// export const toggleBookmark = asyncHandler(async (req: Request, res: Response) => {
-//   const userId = (req as any).user.id;
-//   const { targetType, targetId } = req.params; // targetType is 'Post' or 'User'
-
-//   if (!['Post', 'User'].includes(targetType)) {
-//     return res.status(400).json({ message: "Invalid target type" });
-//   }
-
-//   const existing = await Bookmark.findOne({ user: userId, targetId });
-
-//   if (existing) {
-//     await Bookmark.findByIdAndDelete(existing._id);
-//     return res.status(200).json({ success: true, bookmarked: false });
-//   }
-
-//   await Bookmark.create({ user: userId, targetId, targetType });
-  
-//   // Logic for targetOwnerId depends on type:
-//   // If targetType === 'Post', fetch Post author.
-//   // If targetType === 'User', targetId IS the targetOwnerId.
-
-//   res.status(201).json({ success: true, bookmarked: true });
-// });

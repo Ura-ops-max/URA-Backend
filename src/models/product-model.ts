@@ -9,23 +9,43 @@ export interface IProduct extends Document {
   stock: number;
   size?: string;
   media: string[]; // Master images
-  createdAt: Date;
   likes: Types.ObjectId[];
-
+  // Added to Interface for consistency
+  averageRating: number;
+  totalReviews: number;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
-const productSchema = new Schema<IProduct>({
-  business: { type: Schema.Types.ObjectId, ref: 'Business', required: true },
-  name: { type: String, required: true },
-  category: { type: String, default: 'General' },
-  description: { type: String, required: true },
-  price: { type: Number, required: true },
-  stock: { type: Number, required: true },
-  size: { type: String },
-  media: [{ type: String, required: true }], // Product must have images
-  likes: [{ type: Schema.Types.ObjectId, ref: 'User' }]
+export const productSchema = new Schema<IProduct>(
+  {
+    business: { type: Schema.Types.ObjectId, ref: 'Business', required: true },
+    name: { type: String, required: true, trim: true },
+    category: { type: String, default: 'General', index: true },
+    description: { type: String, required: true },
+    price: { type: Number, required: true },
+    stock: { type: Number, required: true, default: 0 },
+    size: { type: String },
+    media: [{ type: String, required: true }],
+    likes: [{ type: Schema.Types.ObjectId, ref: 'User' }],
 
-}, { timestamps: true });
+    // RATING FIELDS
+    averageRating: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 5,
+      index: true, // Crucial for search performance
+    },
+    totalReviews: {
+      type: Number,
+      default: 0,
+    },
+  },
+  { timestamps: true }
+);
+
+// Optional: Add a text index for name and description to improve the 'q' search logic
+productSchema.index({ name: 'text', description: 'text' });
 
 export const Product = model<IProduct>('Product', productSchema);
-export { productSchema }

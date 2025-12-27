@@ -57,6 +57,7 @@
     "qrcode": "^1.5.4",
     "socket.io": "^4.8.1",
     "speakeasy": "^2.0.0",
+    "uuid": "^13.0.0",
     "winston": "^3.15.0",
     "winston-daily-rotate-file": "^5.0.0"
   },

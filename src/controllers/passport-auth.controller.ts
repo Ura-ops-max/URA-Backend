@@ -14,7 +14,7 @@ import { asyncHandler } from '@/middleware/errorHandler';
 import { blacklistToken } from '@/services/token-blacklist.service';
 import { config } from '@/config/env.config';
 import { HTTP_STATUS } from '@/constants';
-import { eventEmitter } from '@/services/event-emitter.services';
+import { trackEvent } from '@/services/track-event.service'; // Updated import
 import { Types } from 'mongoose';
 
 /**
@@ -48,31 +48,30 @@ export const register = asyncHandler(async (req: Request, res: Response): Promis
     emailVerificationExpires: expires,
   });
 
-  // 🚨 EVENT LOG: User Registered
-  eventEmitter.emit('activityLogged', {
-    actorId: (user._id as Types.ObjectId).toString(),
-    actionType: 'signup',
-    targetModel: 'User',
+  // 🚨 TRACK EVENT: Account Creation
+  await trackEvent({
     targetId: (user._id as Types.ObjectId).toString(),
-    targetOwnerId: (user._id as Types.ObjectId).toString(),
+    targetModel: 'User',
+    type: 'ACTIVITY',
+    activityData: {
+      action: 'SIGNUP',
+      description: 'Account created successfully',
+      metadata: { ip: req.ip, userAgent: req.headers['user-agent'] }
+    }
   });
 
-  // backend/controllers/auth.controller.ts
-
-  // ... user creation code ...
-
-  try {
-    await sendVerificationEmail(email, token);
-  } catch (emailError) {
-    // We log the error so you know it failed, but we DON'T stop the response
-    console.error("Verification email failed to send:", emailError);
-  }
-
-  // Always return success if the user was created
+  
   res.status(HTTP_STATUS.CREATED).json({
     success: true,
     message: 'Registration successful. Please check your email to verify your account.',
   });
+  
+  try {
+    await sendVerificationEmail(email, token);
+  } catch (emailError) {
+    console.error("Verification email failed to send:", emailError);
+  }
+
 });
 
 /**
@@ -89,18 +88,20 @@ export const login = asyncHandler(
           code: 'AUTHENTICATION_ERROR'
         });
       }
-      // if (!user) throw new AuthenticationError(info?.message || 'Invalid credentials');
 
       user.lastLoginAt = new Date();
       await user.save();
 
-      // 🚨 EVENT LOG: User Logged In
-      eventEmitter.emit('activityLogged', {
-        actorId: user.id.toString(),
-        actionType: 'signup', // You can map 'signup' to general 'access' or add 'login' to your schema
-        targetModel: 'User',
+      // 🚨 TRACK EVENT: Successful Login
+      await trackEvent({
         targetId: user.id.toString(),
-        targetOwnerId: user.id.toString(),
+        targetModel: 'User',
+        type: 'ACTIVITY',
+        activityData: {
+          action: 'LOGIN',
+          description: 'User logged in via Email/Password',
+          metadata: { ip: req.ip, userAgent: req.headers['user-agent'] }
+        }
       });
 
       const accessToken = generateAccessToken({ userId: user.id, email: user.email });
@@ -128,13 +129,16 @@ export const googleCallback = asyncHandler(
       user.lastLoginAt = new Date();
       await user.save();
 
-      // 🚨 EVENT LOG: OAuth Login
-      eventEmitter.emit('activityLogged', {
-        actorId: user.id.toString(),
-        actionType: 'signup',
-        targetModel: 'User',
+      // 🚨 TRACK EVENT: OAuth Login
+      await trackEvent({
         targetId: user.id.toString(),
-        targetOwnerId: user.id.toString(),
+        targetModel: 'User',
+        type: 'ACTIVITY',
+        activityData: {
+          action: 'LOGIN_OAUTH',
+          description: 'User logged in via Google',
+          metadata: { ip: req.ip, userAgent: req.headers['user-agent'] }
+        }
       });
 
       const accessToken = generateAccessToken({ userId: user.id, email: user.email });
@@ -169,13 +173,15 @@ export const verifyEmail = asyncHandler(async (req: Request, res: Response): Pro
   user.emailVerificationExpires = undefined as unknown as Date;
   await user.save();
 
-  // 🚨 EVENT LOG: Email Verified
-  eventEmitter.emit('activityLogged', {
-    actorId: (user._id as Types.ObjectId).toString(),
-    actionType: 'signup',
-    targetModel: 'User',
+  // 🚨 TRACK EVENT: Identity Verification
+  await trackEvent({
     targetId: (user._id as Types.ObjectId).toString(),
-    targetOwnerId: (user._id as Types.ObjectId).toString(),
+    targetModel: 'User',
+    type: 'ACTIVITY',
+    activityData: {
+      action: 'EMAIL_VERIFIED',
+      description: 'User successfully verified their email address',
+    }
   });
 
   res.status(HTTP_STATUS.OK).json({
@@ -193,6 +199,17 @@ export const logout = asyncHandler(async (req: Request, res: Response): Promise<
   const accessToken = user?.token;
 
   if (!user) throw new AuthenticationError('User not authenticated');
+
+  // 🚨 TRACK EVENT: Logout Audit
+  await trackEvent({
+    targetId: user.id.toString(),
+    targetModel: 'User',
+    type: 'ACTIVITY',
+    activityData: {
+      action: 'LOGOUT',
+      description: 'User logged out and invalidated session',
+    }
+  });
 
   if (accessToken) {
     try {

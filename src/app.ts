@@ -8,6 +8,9 @@ import { connectDatabase } from '@/config/database.config';
 import { config } from '@/config/env.config';
 import { logger } from '@/utils/logger';
 import { errorHandler, notFoundHandler } from '@/middleware/errorHandler';
+import http from 'http';
+import { socketService } from '@/services/socket.service';
+
 
 // Import routes
 import routes from './routes';
@@ -101,12 +104,9 @@ app.use(errorHandler);
 const startServer = async (): Promise<void> => {
   try {
     await connectDatabase();
-
-    const http = await import('http');
-    const { initSocket } = await import('@/services/socket.service');
     const server = http.createServer(app);
-    initSocket(server);
-
+    socketService.init(server);
+    app.set('io', socketService.io);
     server.listen(config.port, () => {
       logger.info(`Server running on port ${config.port} in ${config.env} mode`);
 

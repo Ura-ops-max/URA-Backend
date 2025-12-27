@@ -30,7 +30,7 @@ router.delete('/:id', requireAuth, deleteItem);
 // --- PRODUCT INVENTORY ---
 // New: Helps the business owner see their own products to link them to posts
 router.get('/my-products', requireAuth, getMyProducts);
-router.get('/social', requireAuth, getSocialPosts);
+router.get('/social', optionalProtect, getSocialPosts);
 router.get('/product', requireAuth, getProductCatalog);
 
 // --- INTERACTIONS ---

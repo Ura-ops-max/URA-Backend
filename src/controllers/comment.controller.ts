@@ -1,10 +1,10 @@
 // backend/controllers/commentController.ts
 import { Request, Response } from 'express';
 import { Comment } from '@/models/comment-model';
-import { Post } from '@/models/post-model'; // Added Post import for logging
+import { Post } from '@/models/post-model'; 
 import { asyncHandler } from '@/middleware/errorHandler';
-import { eventEmitter } from '@/services/event-emitter.services';
-import { Types } from 'mongoose'; // Ensure Types is imported at the top
+import { trackEvent } from '@/services/track-event.service'; // Updated import
+import { Types } from 'mongoose';
 
 /**
  * Helper to safely extract user ID from the request
@@ -40,18 +40,36 @@ export const createComment = asyncHandler(async (req: Request, res: Response): P
     mentions: mentions || []
   });
 
-  // LOGGING ACTIVITY
-  // We need to find the post author to know who to notify
+  // LOGGING ACTIVITY & NOTIFICATION
   const targetPost = await Post.findById(postId).select('author');
 
   if (targetPost) {
-    eventEmitter.emit('activityLogged', {
-      actorId: auth.userId.toString(),
-      actionType: 'comment',
-      targetModel: 'Post',
-      targetId: postId,
-      targetOwnerId: targetPost.author.toString(),
-      contentPreview: content.substring(0, 50),
+    // 1. Log Activity for the Commenter
+    await trackEvent({
+      targetId: auth.userId.toString(),
+      targetModel: authorType,
+      type: 'ACTIVITY',
+      activityData: {
+        action: 'COMMENT_CREATE',
+        description: `You commented on a post`,
+        metadata: { contentPreview: content.substring(0, 50) }
+      }
+    });
+
+    // 2. Send Notification to the Post Owner
+    await trackEvent({
+      targetId: targetPost.author.toString(),
+      targetModel: 'User', // Post authors are stored as User IDs
+      type: 'NOTIFICATION',
+      notificationData: {
+        type: 'COMMENT',
+        title: 'New Comment',
+        message: `commented on your post: "${content.substring(0, 30)}..."`,
+        sender: auth.userId.toString(),
+        senderModel: authorType,
+        relatedId: postId,
+        modelType: 'Post'
+      }
     });
   }
 
@@ -125,16 +143,33 @@ export const toggleCommentLike = asyncHandler(async (req: Request, res: Response
     comment.likes = comment.likes.filter(id => id.toString() !== auth.userId.toString());
   } else {
     comment.likes.push(auth.userId);
+    const authorType = auth.role === 'business' ? 'Business' : 'User';
 
-    // Only emit activity on NEW likes
-    // ... inside your toggleCommentLike function
-    eventEmitter.emit('activityLogged', {
-      actorId: auth.userId.toString(),
-      actionType: 'like',
-      targetModel: 'Comment',
-      // Cast _id to any or Types.ObjectId to allow .toString()
-      targetId: (comment._id as Types.ObjectId).toString(),
-      targetOwnerId: comment.author.toString(),
+    // 1. Log Activity for the Liker
+    await trackEvent({
+      targetId: auth.userId.toString(),
+      targetModel: authorType,
+      type: 'ACTIVITY',
+      activityData: {
+        action: 'COMMENT_LIKE',
+        description: `You liked a comment`,
+      }
+    });
+
+    // 2. Notify the Comment Author
+    await trackEvent({
+      targetId: comment.author.toString(),
+      targetModel: 'User',
+      type: 'NOTIFICATION',
+      notificationData: {
+        type: 'LIKE',
+        title: 'New Like',
+        message: `liked your comment`,
+        sender: auth.userId.toString(),
+        senderModel: authorType,
+        relatedId: (comment._id as any).toString(),
+        modelType: 'Comment'
+      }
     });
   }
 

@@ -1,23 +1,26 @@
-// src/routes/chat.route.ts (Existing routes and the new route)
-
 import { Router } from 'express';
-import { requireAuth } from '@/middleware/auth';
-import { 
-    createOrGetConversation, // Renamed for clarity
-    getMessages,             // Renamed for clarity
-    getConversationList      // <-- New Controller Import
-} from '@/controllers/chat.controller'; 
-// Assuming all controller logic is now moved to chat.controller.ts
+import * as chatController from '@/controllers/chat.controller';
+import { requireAuth } from '@/middleware/auth'; // Your passport/auth middleware
 
 const router = Router();
 
-// Route to get all conversations for the list view (THE NEW ROUTE)
-router.get('/conversations/list', requireAuth, getConversationList);
+// All chat routes should be protected by authentication
+router.use(requireAuth);
 
-// Create or get conversation between user and business (Existing)
-router.post('/conversations', requireAuth, createOrGetConversation);
+// 1. Access/Create a conversation (The "Entry Point")
+// POST /api/v1/conversations
+router.post('/', chatController.accessConversation);
 
-// Get messages for a conversation (Existing)
-router.get('/conversations/:id/messages', requireAuth, getMessages);
+// 2. Get the list of conversations for a specific Tab (The "Sidebar")
+// GET /api/v1/conversations?profileId=XXXXX
+router.get('/', chatController.getConversations);
+
+// 3. Get messages for a specific conversation
+// GET /api/v1/conversations/:conversationId/messages?profileId=XXXXX
+router.get('/:conversationId/messages', chatController.getMessages);
+
+// 4. Send a new message
+// POST /api/v1/conversations/messages
+router.post('/messages', chatController.sendMessage);
 
 export default router;

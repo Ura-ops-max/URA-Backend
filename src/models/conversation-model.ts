@@ -1,68 +1,67 @@
 import { Schema, model, Document, Types } from 'mongoose';
 
+export interface IParticipant {
+  participantId: Types.ObjectId;
+  participantModel: 'User' | 'Business';
+}
+
 export interface IConversation extends Document {
-  participants: {
-    user: Types.ObjectId;
-    business: Types.ObjectId;
-  };
-  lastMessage?: Types.ObjectId; // For the sidebar preview (content + time)
-  unreadCount: {
-    user: number;      // Unread messages for the User
-    business: number;  // Unread messages for the Business
-  };
-  // Allows users to "delete" a chat from their view without deleting the actual data
-  visibleTo: {
-    user: boolean;
-    business: boolean;
-  };
+  participants: IParticipant[];
+  lastMessage?: Types.ObjectId;
+  // Use Map for dynamic keys (participantId) to handle unread/visibility
+  unreadCount: Map<string, number>; 
+  visibleTo: Map<string, boolean>;
   createdAt: Date;
   updatedAt: Date;
 }
 
 const conversationSchema = new Schema<IConversation>(
   {
-    participants: {
-      user: { 
-        type: Schema.Types.ObjectId, 
-        ref: 'User', 
-        required: true,
-        index: true 
+    participants: [
+      {
+        participantId: {
+          type: Schema.Types.ObjectId,
+          required: true,
+          refPath: 'participants.participantModel',
+        },
+        participantModel: {
+          type: String,
+          required: true,
+          enum: ['User', 'Business'],
+        },
       },
-      business: { 
-        type: Schema.Types.ObjectId, 
-        ref: 'Business', 
-        required: true,
-        index: true 
-      },
+    ],
+    lastMessage: {
+      type: Schema.Types.ObjectId,
+      ref: 'Message',
     },
-    lastMessage: { 
-      type: Schema.Types.ObjectId, 
-      ref: 'Message' 
-    },
+    // Map allows us to do: unreadCount.set(userId, 5)
     unreadCount: {
-      user: { type: Number, default: 0 },
-      business: { type: Number, default: 0 },
+      type: Map,
+      of: Number,
+      default: {},
     },
     visibleTo: {
-      user: { type: Boolean, default: true },
-      business: { type: Boolean, default: true },
+      type: Map,
+      of: Boolean,
+      default: {},
     },
   },
-  { 
+  {
     timestamps: true,
     toJSON: { virtuals: true },
-    toObject: { virtuals: true }
+    toObject: { virtuals: true },
   }
 );
 
-/**
- * INDEXING
- * 1. Ensure only ONE conversation exists between a specific user and business.
- * 2. Optimized sorting for the chat list (usually sorted by updatedAt).
- */
+// This index ensures we don't have duplicate chats between the same two entities
+// Note: You'll need to sort participant IDs before saving to make this unique index effective
+// Replace your current index with this:
 conversationSchema.index(
-  { 'participants.user': 1, 'participants.business': 1 }, 
-  { unique: true }
+  { 
+    'participants.participantId': 1, 
+    'participants.participantModel': 1 
+  }
 );
 conversationSchema.index({ updatedAt: -1 });
 

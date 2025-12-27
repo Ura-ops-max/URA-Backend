@@ -37,7 +37,7 @@ const userSchema = new Schema<IUser>(
   {
     firstName: { type: String, required: true },
     lastName: { type: String, required: true },
-    username: { type: String, required: true, unique: true, trim: true },
+    username: { type: String, required: true, unique: true, trim: true, lowercase: true },
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     password: { type: String, select: false }, // 'select: false' hides it from default queries
     googleId: { type: String, sparse: true, unique: true },
@@ -73,9 +73,16 @@ userSchema.virtual('fullName').get(function () {
 });
 
 userSchema.pre<IUser>('save', function (next) {
-  if (!this.username && this.firstName && this.lastName) {
-    this.username = `_@${this.firstName.toLowerCase()}${this.lastName.toLowerCase()}`;
+  // 1. If username exists (manual input), convert to lowercase
+  if (this.username) {
+    this.username = this.username.toLowerCase();
   }
+
+  // 2. If username doesn't exist, generate it from names
+  if (!this.username && this.firstName && this.lastName) {
+    this.username = `_${this.firstName.toLowerCase()}${this.lastName.toLowerCase()}`;
+  }
+
   next();
 });
 
