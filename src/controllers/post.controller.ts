@@ -50,10 +50,10 @@ export const getUnifiedFeed = asyncHandler(async (req: Request, res: Response): 
 
     posts = await Post.find({
       $or: [
-        { author: { $in: [...following, new Types.ObjectId(currentUserId)] } }, 
-        { likes: new Types.ObjectId(currentUserId) }, 
-        { _id: { $in: user?.bookmarkedPosts || [] } }, 
-        {} 
+        { author: { $in: [...following, new Types.ObjectId(currentUserId)] } },
+        { likes: new Types.ObjectId(currentUserId) },
+        { _id: { $in: user?.bookmarkedPosts || [] } },
+        {}
       ]
     });
   } else {
@@ -76,6 +76,26 @@ export const getUnifiedFeed = asyncHandler(async (req: Request, res: Response): 
     const isBusiness = post.authorType === 'Business';
     const hasProduct = !!post.product;
 
+    let ratingData = { average: 0, count: 0 };
+    if (isBusiness) {
+      const businessId = author?._id;
+      const reviews = await Review.aggregate([
+        { $match: { reviewedItem: new Types.ObjectId(businessId) } },
+        {
+          $group: {
+            _id: null,
+            avgRating: { $avg: "$rating" },
+            count: { $sum: 1 }
+          }
+        }
+      ]);
+      if (reviews.length > 0) {
+        ratingData = {
+          average: Math.round(reviews[0].avgRating * 10) / 10,
+          count: reviews[0].count
+        };
+      }
+    }
     const isLiked = currentUserId ? post.likes.some((id: any) => id.toString() === currentUserId) : false;
     const commentsCount = await Comment.countDocuments({ postId: post._id });
 
@@ -91,6 +111,9 @@ export const getUnifiedFeed = asyncHandler(async (req: Request, res: Response): 
       isBookmarked: bookmarkedPostIds.includes(post._id.toString()),
       isLiked,
       isVerified: author?.isVerified || false,
+      rating: ratingData.average,
+      reviewCount: ratingData.count,
+      isFeatured: ratingData.average >= 4.5 && ratingData.count > 10
     };
   }));
 
@@ -141,6 +164,28 @@ export const getSocialPosts = asyncHandler(async (req: Request, res: Response): 
     const isBusiness = post.authorType === 'Business';
     const productData = post.product as any;
 
+    let ratingData = { average: 0, count: 0 };
+    if (isBusiness) {
+      const businessId = author?._id;
+      const reviews = await Review.aggregate([
+        { $match: { reviewedItem: new Types.ObjectId(businessId) } },
+        {
+          $group: {
+            _id: null,
+            avgRating: { $avg: "$rating" },
+            count: { $sum: 1 }
+          }
+        }
+      ]);
+      if (reviews.length > 0) {
+        ratingData = {
+          average: Math.round(reviews[0].avgRating * 10) / 10,
+          count: reviews[0].count
+        };
+      }
+    }
+
+
     const displayMedia = productData ? productData.media : post.media;
     const isLiked = currentUserId ? post.likes.some((id: any) => id.toString() === currentUserId) : false;
     const commentsCount = await Comment.countDocuments({ postId: post._id });
@@ -158,7 +203,10 @@ export const getSocialPosts = asyncHandler(async (req: Request, res: Response): 
       isBookmarked: bookmarkedPostIds.includes(post._id.toString()),
       isLiked,
       isVerified: author?.isVerified || false,
-      productDetails: productData || null
+      productDetails: productData || null,
+      rating: ratingData.average,
+      reviewCount: ratingData.count,
+      isFeatured: ratingData.average >= 4.5 && ratingData.count > 10
     };
   }));
 
@@ -426,16 +474,16 @@ export const getMyProducts = asyncHandler(async (req: Request, res: Response): P
 });
 
 export const getProductCategories = (req: Request, res: Response) => {
-  res.status(200).json({ 
-    success: true, 
-    data: PRODUCT_CATEGORIES 
+  res.status(200).json({
+    success: true,
+    data: PRODUCT_CATEGORIES
   });
 };
 
 export const getProductDetails = asyncHandler(async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const currentUserId = getAuthUserId(req); 
+    const currentUserId = getAuthUserId(req);
 
     if (!Types.ObjectId.isValid(id)) {
       res.status(400).json({ message: "Invalid Product ID" });
@@ -455,9 +503,9 @@ export const getProductDetails = asyncHandler(async (req: Request, res: Response
       category: product.category,
       _id: { $ne: product._id }
     })
-    .limit(4)
-    .select('name price media category stock')
-    .lean();
+      .limit(4)
+      .select('name price media category stock')
+      .lean();
 
     const isLiked = currentUserId
       ? product.likes?.some((id: any) => id.toString() === currentUserId)
@@ -465,9 +513,9 @@ export const getProductDetails = asyncHandler(async (req: Request, res: Response
 
     let isWishlisted = false;
     if (currentUserId) {
-      const wishlistEntry = await Wishlist.findOne({ 
-        user: new Types.ObjectId(currentUserId), 
-        product: product._id 
+      const wishlistEntry = await Wishlist.findOne({
+        user: new Types.ObjectId(currentUserId),
+        product: product._id
       });
       isWishlisted = !!wishlistEntry;
     }

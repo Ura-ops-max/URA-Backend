@@ -49,6 +49,8 @@ export const getCurrentUser = asyncHandler(async (req: Request, res: Response): 
     message: 'User retrieved successfully',
     user,
     related: {
+      business_id: businesses[0]?._id || null,
+
       businesses,
       recentPosts: posts,
       counts: {
@@ -212,11 +214,11 @@ export const getUserProfile = asyncHandler(async (req: Request, res: Response): 
   );
 
   if (!user) throw new NotFoundError('User not found');
-  
+
   const loggedInUserId = getAuthUserId(req);
   const loggedInUser = await User.findById(loggedInUserId);
 
-  if( !loggedInUser ){
+  if (!loggedInUser) {
     res.status(404).json({ success: false, message: "No Logged in User." });
     return;
   }
@@ -231,9 +233,9 @@ export const getUserProfile = asyncHandler(async (req: Request, res: Response): 
     ? user.followers.some(id => id.toString() === loggedInUserId)
     : false;
 
-    const isBookmarked = loggedInUserId
-      ? loggedInUser.bookmarkedBusinesses.some(id => id.toString() === user.businesses?.[0]?.toString())
-      : false;
+  const isBookmarked = loggedInUserId
+    ? loggedInUser.bookmarkedBusinesses.some(id => id.toString() === user.businesses?.[0]?.toString())
+    : false;
 
   res.status(HTTP_STATUS.OK).json({
     success: true,
@@ -319,7 +321,7 @@ export const getFollowList = asyncHandler(async (req: Request, res: Response): P
         select: '_id firstName lastName username profilePicture'
       })
       .lean();
-    
+
     if (target) isBusinessTarget = true;
   }
 
@@ -345,7 +347,7 @@ export const getFollowList = asyncHandler(async (req: Request, res: Response): P
 
   const formattedList = rawList.map((item: any) => {
     const isItemBusiness = item.kind === 'Business';
-    
+
     return {
       _id: item._id,
       firstName: isItemBusiness ? item.businessName : item.firstName,
@@ -353,8 +355,8 @@ export const getFollowList = asyncHandler(async (req: Request, res: Response): P
       username: isItemBusiness ? 'Business Account' : (item.username || 'user'),
       avatar: isItemBusiness ? item.businessLogo : item.profilePicture,
       isBusiness: isItemBusiness,
-      isFollowing: currentUserId 
-        ? item.followers?.some((id: any) => id.toString() === currentUserId.toString()) 
+      isFollowing: currentUserId
+        ? item.followers?.some((id: any) => id.toString() === currentUserId.toString())
         : false
     };
   });
