@@ -4,41 +4,34 @@ import { User } from '@/models/user-model';
 import { Post } from '../models/post-model';
 import { Business } from '../models/business-model';
 import { asyncHandler } from '@/middleware/errorHandler';
+import { Types } from 'mongoose';
+import { Review } from '@/models/review-model';
+import { Comment } from '@/models/comment-model';
 
 export const getMyBookmarks = asyncHandler(async (req: Request, res: Response): Promise<void> => {
   const { type } = req.query; // 'Post' or 'Business'
-  const userId = (req as any).user?._id;
+  const currentUserId = (req as any).user?._id;
 
-  if (!userId) {
+  if (!currentUserId) {
     res.status(401).json({ message: "User not authenticated" });
     return;
   }
 
-  const isPost = type === 'Post';
-  const bookmarkField = isPost ? 'bookmarkedPosts' : 'bookmarkedBusinesses';
+  const isPostRequest = type === 'Post';
+  const bookmarkField = isPostRequest ? 'bookmarkedPosts' : 'bookmarkedBusinesses';
 
-  // 1. Create a base population object
-  const populationOptions: any = {
-    path: bookmarkField,
-  };
-
-  // 2. Only add the nested 'populate' key if it's a Post
-  // This avoids passing 'undefined' and keeps TypeScript happy
-  if (isPost) {
-    populationOptions.populate = [
-      {
-        path: 'author',
-        select: '_id businessName firstName lastName profilePicture businessLogo isVerified'
-      },
-      {
-        path: 'product'
-      }
-    ];
-  }
-
-  // 3. Execute the query
-  const userWithBookmarks = await User.findById(userId)
-    .populate(populationOptions)
+  // 1. Fetch User with bookmarks populated
+  const userWithBookmarks = await User.findById(currentUserId)
+    .populate({
+      path: bookmarkField,
+      populate: isPostRequest ? [
+        { 
+          path: 'author', 
+          select: '_id username businessName firstName lastName profilePicture businessLogo isVerified' 
+        },
+        { path: 'product' }
+      ] : []
+    })
     .lean();
 
   if (!userWithBookmarks) {
@@ -46,28 +39,66 @@ export const getMyBookmarks = asyncHandler(async (req: Request, res: Response): 
     return;
   }
 
-  // Access the dynamic field safely
   const rawResults = (userWithBookmarks as any)[bookmarkField] || [];
 
-  // 4. Format for the frontend
-  const formattedResults = rawResults.map((item: any) => {
-    if (isPost) {
-      const isBusinessAuthor = item.authorType === 'Business';
-      return {
-        ...item,
-        type: item.product ? 'PRODUCT' : 'SOCIAL',
-        authorId: item.author?._id,
-        displayName: isBusinessAuthor ? item.author?.businessName : `${item.author?.firstName} ${item.author?.lastName}`,
-        displayAvatar: item.author?.businessLogo || item.author?.profilePicture,
-        isVerified: item.author?.isVerified || false,
-        isBookmarked: true
-      };
-    }
-    return {
+  // 2. If it's a Business bookmark, return simple formatting
+  if (!isPostRequest) {
+    const formattedBusinesses = rawResults.map((item: any) => ({
       ...item,
       isBookmarked: true
-    };
-  });
+    }));
+    res.status(200).json(formattedBusinesses);
+    return;
+  }
 
-  res.status(200).json(formattedResults);
+  // 3. If it's a POST bookmark, apply full FEED logic (Likes, Reviews, Comments)
+  const formattedPosts = await Promise.all(rawResults.map(async (post: any) => {
+    const author = post.author;
+    const isBusiness = post.authorType === 'Business';
+    const hasProduct = !!post.product;
+
+    // Fetch Rating Data for Business Authors
+    let ratingData = { average: 0, count: 0 };
+    if (isBusiness && author?._id) {
+      const reviews = await Review.aggregate([
+        { $match: { reviewedItem: new Types.ObjectId(author._id) } },
+        {
+          $group: {
+            _id: null,
+            avgRating: { $avg: "$rating" },
+            count: { $sum: 1 }
+          }
+        }
+      ]);
+      if (reviews.length > 0) {
+        ratingData = {
+          average: Math.round(reviews[0].avgRating * 10) / 10,
+          count: reviews[0].count
+        };
+      }
+    }
+
+    // Interaction Counts
+    const isLiked = post.likes ? post.likes.some((id: any) => id.toString() === currentUserId.toString()) : false;
+    const commentsCount = await Comment.countDocuments({ postId: post._id });
+
+    return {
+      ...post,
+      type: hasProduct ? 'PRODUCT' : 'POST',
+      authorId: author?._id,
+      displayName: isBusiness ? author?.businessName : `${author?.firstName} ${author?.lastName}`,
+      displayAvatar: isBusiness ? author?.businessLogo : author?.profilePicture,
+      username: isBusiness ? null : author?.username,
+      likesCount: post.likes?.length || 0,
+      commentsCount,
+      isBookmarked: true, // It's in the bookmark list, so this is always true
+      isLiked,
+      isVerified: author?.isVerified || false,
+      rating: ratingData.average,
+      reviewCount: ratingData.count,
+      isFeatured: ratingData.average >= 4.5 && ratingData.count > 10
+    };
+  }));
+
+  res.status(200).json(formattedPosts);
 });

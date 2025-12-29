@@ -1,53 +1,78 @@
 import { Request, Response } from 'express';
 import { Notification } from '@/models/notification-model';
-import { Activity } from '@/models/activity-model';
-import { asyncHandler } from '@/middleware/errorHandler';
-
-// --- NOTIFICATIONS ---
-
 import { Business } from '@/models/business-model';
+import { asyncHandler } from '@/middleware/errorHandler';
+import { Types } from 'mongoose';
+import { Activity } from '@/models/activity-model';
+
+/**
+ * Helper to get all IDs associated with a user (Self + Owned Businesses)
+ */
+const getRecipientIds = async (req: Request) => {
+  const userId = (req as any).user._id;
+  const userBusinesses = await Business.find({ owner: userId }).select('_id');
+  return [userId, ...userBusinesses.map(b => b._id)];
+};
 
 export const getNotifications = asyncHandler(async (req: Request, res: Response) => {
-  const userId = (req as any).user._id;
+  const allRecipientIds = await getRecipientIds(req);
 
-  // 1. Find all businesses owned by this user
-  const userBusinesses = await Business.find({ owner: userId }).select('_id');
-  const businessIds = userBusinesses.map(b => b._id);
-
-  // 2. Create an array of all recipient IDs the user cares about
-  const allRecipientIds = [userId, ...businessIds];
-
-  // 3. Fetch notifications for any of these recipients
   const notifications = await Notification.find({ 
     recipient: { $in: allRecipientIds } 
   })
     .sort({ createdAt: -1 })
-    .populate('sender')    // This will pull User profilePic or Business logo
-    .populate('relatedId'); // This will pull Post/Product/Business details
+    .populate('sender', 'firstName lastName username profilePicture businessName businessLogo')
+    .populate('relatedId')
+    .lean();
 
   res.status(200).json(notifications);
 });
 
+export const markAsRead = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params; // For single ID via URL
+  const { ids } = req.body;   // For bulk selection via Body
+  const allRecipientIds = await getRecipientIds(req);
+
+  let query: any = { recipient: { $in: allRecipientIds }, isRead: false };
+
+  // 1. Handle Bulk Selection from Desktop Checkboxes
+  if (ids && Array.isArray(ids)) {
+    query._id = { $in: ids };
+  } 
+  // 2. Handle Single Click
+  else if (id) {
+    query._id = id;
+  }
+  // 3. If no ID/IDs provided, "Mark All As Read" logic applies
+
+  await Notification.updateMany(query, { $set: { isRead: true } });
+
+  res.status(200).json({ success: true });
+});
+
 export const deleteNotification = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params;
-  const userId = (req as any).user._id;
+  const { ids } = req.body; // Support for bulk delete
+  const allRecipientIds = await getRecipientIds(req);
 
-  // Find businesses to ensure we can delete business-related notifications too
-  const userBusinesses = await Business.find({ owner: userId }).select('_id');
-  const allRecipientIds = [userId, ...userBusinesses.map(b => b._id)];
+  let query: any = { recipient: { $in: allRecipientIds } };
 
-  await Notification.findOneAndDelete({ 
-    _id: id, 
-    recipient: { $in: allRecipientIds } 
+  if (ids && Array.isArray(ids)) {
+    query._id = { $in: ids };
+  } else {
+    query._id = id;
+  }
+
+  const result = await Notification.deleteMany(query);
+
+  res.status(200).json({ 
+    success: true, 
+    message: `${result.deletedCount} notification(s) deleted` 
   });
-
-  res.status(200).json({ success: true, message: "Notification deleted" });
 });
 
 export const clearAllNotifications = asyncHandler(async (req: Request, res: Response) => {
-  const userId = (req as any).user._id;
-  const userBusinesses = await Business.find({ owner: userId }).select('_id');
-  const allRecipientIds = [userId, ...userBusinesses.map(b => b._id)];
+  const allRecipientIds = await getRecipientIds(req);
 
   await Notification.deleteMany({ 
     recipient: { $in: allRecipientIds } 
@@ -56,54 +81,15 @@ export const clearAllNotifications = asyncHandler(async (req: Request, res: Resp
   res.status(200).json({ success: true, message: "All notifications cleared" });
 });
 
-// controllers/notification.controller.ts
-
 export const getUnreadCount = asyncHandler(async (req: Request, res: Response) => {
-  const userId = (req as any).user._id;
+  const allRecipientIds = await getRecipientIds(req);
 
-  // 1. Fetch businesses only if the user is a business owner (Optimization)
-  let allRecipientIds = [userId];
-  
-  if ((req as any).user.isBusinessOwner) {
-    const userBusinesses = await Business.find({ owner: userId }).select('_id');
-    const businessIds = userBusinesses.map(b => b._id);
-    allRecipientIds = [userId, ...businessIds];
-  }
-
-  // 2. Count unread notifications for all relevant IDs
   const count = await Notification.countDocuments({
     recipient: { $in: allRecipientIds },
     isRead: false
   });
 
   res.status(200).json({ count });
-});
-
-export const markAsRead = asyncHandler(async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const userId = (req as any).user._id;
-
-  let allRecipientIds = [userId];
-  if ((req as any).user.isBusinessOwner) {
-    const userBusinesses = await Business.find({ owner: userId }).select('_id');
-    allRecipientIds = [userId, ...userBusinesses.map(b => b._id)];
-  }
-
-  if (id) {
-    // Mark one specific notification
-    await Notification.findOneAndUpdate(
-      { _id: id, recipient: { $in: allRecipientIds } },
-      { isRead: true }
-    );
-  } else {
-    // Mark all as read
-    await Notification.updateMany(
-      { recipient: { $in: allRecipientIds }, isRead: false },
-      { $set: { isRead: true } }
-    );
-  }
-
-  res.status(200).json({ success: true });
 });
 // --- ACTIVITIES ---
 
