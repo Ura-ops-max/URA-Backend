@@ -85,14 +85,14 @@ export const updateProfile = asyncHandler(async (req: Request, res: Response): P
 
   // 🚨 TRACK EVENT: Profile Update
   await trackEvent({
-    targetId: userId,
-    targetModel: 'User',
-    type: 'ACTIVITY',
-    activityData: {
-      action: 'PROFILE_UPDATE',
-      description: 'You updated your profile information',
-      metadata: { ip: req.ip, userAgent: req.headers['user-agent'] }
-    }
+      targetId: userId,
+      targetModel: 'User',
+      type: 'ACTIVITY',
+      activityData: {
+          action: 'PROFILE_UPDATE',
+          description: 'You updated your profile information',
+          metadata: {ip: req.ip, userAgent: req.headers['user-agent']}
+      }
   });
 
   res.status(200).json({ success: true, user });
@@ -128,14 +128,14 @@ export const updateBusiness = asyncHandler(async (req: Request, res: Response): 
 
   // 🚨 TRACK EVENT: Business Info Updated
   await trackEvent({
-    targetId: userId,
-    targetModel: 'User',
-    type: 'ACTIVITY',
-    activityData: {
-      action: 'BUSINESS_UPDATE',
-      description: `You updated the business profile for ${business.businessName}`,
-      metadata: { ip: req.ip, userAgent: req.headers['user-agent'] }
-    }
+      targetId: userId,
+      targetModel: 'User',
+      type: 'ACTIVITY',
+      activityData: {
+          action: 'BUSINESS_UPDATE',
+          description: `You updated the business profile for ${business.businessName}`,
+          metadata: {ip: req.ip, userAgent: req.headers['user-agent']}
+      }
   });
 
   res.status(200).json({ success: true, business });
@@ -180,20 +180,20 @@ export const convertToBusiness = asyncHandler(async (req: Request, res: Response
 
     // 🚨 TRACK EVENT: Upgrade to Business
     await trackEvent({
-      targetId: userId,
-      targetModel: 'User',
-      type: 'BOTH',
-      notificationData: {
-        type: 'SYSTEM',
-        title: 'Welcome Business Owner!',
-        message: 'Your account has been upgraded. Start setting up your business profile.',
-        sender: userId, // System-style notification, can be self-sent or a system ID
-        senderModel: 'User'
-      },
-      activityData: {
-        action: 'BUSINESS_CONVERSION',
-        description: `You converted your account to a business: ${newBusiness.businessName}`,
-      }
+        targetId: userId,
+        targetModel: 'User',
+        type: 'BOTH',
+        notificationData: {
+            type: 'SYSTEM',
+            title: 'Welcome Business Owner!',
+            message: 'Your account has been upgraded. Start setting up your business profile.',
+            sender: userId, // System-style notification, can be self-sent or a system ID
+            senderModel: 'User'
+        },
+        activityData: {
+            action: 'BUSINESS_CONVERSION',
+            description: `You converted your account to a business: ${newBusiness.businessName}`,
+        }
     });
 
     res.status(200).json({ success: true, message: "Account upgraded successfully." });

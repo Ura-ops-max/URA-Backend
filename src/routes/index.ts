@@ -12,6 +12,8 @@ import orderRoutes from '@/routes/order.routes';
 import cartRoutes from '@/routes/cart.routes';
 import settingsRoutes from '@/routes/user-settings.routes';
 import reviewsRoutes from '@/routes/reviews.routes';
+import webhookRouter from "@/routes/webhook.route"
+import paymentRoutes from '@/routes/payment.route'
 
 const router = Router();
 
@@ -27,5 +29,7 @@ router.use('/order', orderRoutes);
 router.use('/cart', cartRoutes);
 router.use('/settings', settingsRoutes);
 router.use('/reviews', reviewsRoutes);
+router.use('/webhooks', webhookRouter);
+router.use('/payment', paymentRoutes);
 
 export default router;

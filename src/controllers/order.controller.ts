@@ -1,12 +1,13 @@
 import { Request, Response } from 'express';
 import Order from '@/models/order-model';
 import Cart from '@/models/cart-model';
-import { Product } from '@/models/product-model';
-import { trackEvent } from '@/services/track-event.service'; // Added import
+import { trackEvent } from '@/services/track-event.service';
+import {initEscrowPayment} from "@/services/payluk.service"; // Added import
 
 // Helper to extract User ID from multiple possible middleware formats
 const getAuthUserId = (req: Request): string | null => {
   const user = (req as any).user;
+  console.log(user);
   const id = user?._id || user?.id || user?.userId;
   return id ? id.toString() : null;
 };
@@ -21,7 +22,7 @@ export const createOrderFromCart = async (req: Request, res: Response) => {
     const cart = await Cart.findOne({ user: userId }).populate('items.product');
     if (!cart || cart.items.length === 0) return res.status(400).json({ message: "Cart is empty" });
 
-    // Assuming first item's business is the target business (or handle multi-vendor split)
+    // Assuming first item's business is the target business (or handle multivendor split)
     const firstItem: any = cart.items[0].product;
     const businessId = firstItem.business;
 
@@ -46,7 +47,7 @@ export const createOrderFromCart = async (req: Request, res: Response) => {
       totalAmount += p.price * item.quantity;
 
       // ATOMIC DECREMENT OF STOCK
-      await Product.findByIdAndUpdate(p._id, { $inc: { stock: -item.quantity } });
+      // await Product.findByIdAndUpdate(p._id, { $inc: { stock: -item.quantity } });
     }
 
     const newOrder = new Order({
@@ -57,11 +58,27 @@ export const createOrderFromCart = async (req: Request, res: Response) => {
       totalAmount,
       shippingAddress,
       paymentMethod,
-      status: 'pending'
+      status: 'pending',
+      paymentStatus: 'pending'
     });
 
     await newOrder.save();
     await Cart.findOneAndDelete({ user: userId }); // Clear cart after success
+
+    if (!userId || userId === 'null') {
+      console.warn('User ID is null or undefined. Payment will be initiated without user context.');
+      return res.status(201).json({ message: "Order successful, but user context is missing for payment initiation", order: newOrder });
+    }
+
+    // initialize payment with Payluk
+    const callbackUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/payments/complete`;
+    const { paymentToken, paymentUrl, raw } = await initEscrowPayment({
+      // amountKobo: Math.round(totalAmount * 100), // convert NGN -> kobo. Confirm with Payluk docs
+        amountKobo: totalAmount, // Payluk may expect amount in NGN minor unit (e.g., NGN 100 => 100). Adjust if needed.
+      callbackUrl,
+      orderId: newOrder._id.toString(),
+      userId
+    });
 
     // 🚨 TRACK EVENT: Order Placement
     // We log an activity for the user and (optionally) notify the business
@@ -81,9 +98,13 @@ export const createOrderFromCart = async (req: Request, res: Response) => {
       }
     });
 
-    res.status(201).json({ message: "Order successful", order: newOrder });
+    return res.status(201).json({ message: 'Order created. Complete payment with Payluk.', order: newOrder, payluk: {
+        paymentToken,
+        paymentUrl,
+        rawResponse: raw
+      } });
   } catch (error) {
-    res.status(500).json({ message: "Order creation failed", error });
+    return res.status(500).json({ message: "Order creation failed", error });
   }
 };
 
@@ -108,8 +129,8 @@ export const getOrderById = async (req: Request, res: Response) => {
       return res.status(403).json({ message: "Unauthorized access" });
     }
 
-    res.status(200).json(order);
+    return res.status(200).json(order);
   } catch (error) {
-    res.status(500).json({ message: "Failed to fetch order", error });
+    return res.status(500).json({ message: "Failed to fetch order", error });
   }
 };

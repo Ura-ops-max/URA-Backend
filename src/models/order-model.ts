@@ -17,6 +17,12 @@ export interface IOrderItem {
   image: string;
 }
 
+export interface IPaymentDetails {
+  provider: 'payluk';
+  transactionRef: string;
+  details?: any;
+}
+
 export interface IOrder extends Document {
   user: mongoose.Types.ObjectId;
   business: mongoose.Types.ObjectId; // Track which business this order belongs to
@@ -30,6 +36,8 @@ export interface IOrder extends Document {
   status: OrderStatus;
   paymentStatus: 'pending' | 'paid' | 'failed';
   paymentMethod: 'card' | 'transfer' | 'wallet';
+  payment?: IPaymentDetails;
+  paidAt?: Date;
   trackingNumber?: string;
   orderNumber: string; // Human readable ID like #ORD-12345
 }
@@ -62,6 +70,13 @@ const OrderSchema: Schema = new Schema({
     default: 'pending' 
   },
   paymentMethod: { type: String, required: true },
+  payment: {
+    provider: String,
+    transactionRef: String,
+    details: Schema.Types.Mixed
+  },
+
+  paidAt: Date,
   trackingNumber: { type: String }
 }, { timestamps: true });
 

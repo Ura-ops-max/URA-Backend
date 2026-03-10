@@ -50,14 +50,14 @@ export const register = asyncHandler(async (req: Request, res: Response): Promis
 
   // 🚨 TRACK EVENT: Account Creation
   await trackEvent({
-    targetId: (user._id as Types.ObjectId).toString(),
-    targetModel: 'User',
-    type: 'ACTIVITY',
-    activityData: {
-      action: 'SIGNUP',
-      description: 'Account created successfully',
-      metadata: { ip: req.ip, userAgent: req.headers['user-agent'] }
-    }
+      targetId: (user._id as Types.ObjectId).toString(),
+      targetModel: 'User',
+      type: 'ACTIVITY',
+      activityData: {
+          action: 'SIGNUP',
+          description: 'Account created successfully',
+          metadata: {ip: req.ip, userAgent: req.headers['user-agent']}
+      }
   });
 
   
@@ -94,14 +94,14 @@ export const login = asyncHandler(
 
       // 🚨 TRACK EVENT: Successful Login
       await trackEvent({
-        targetId: user.id.toString(),
-        targetModel: 'User',
-        type: 'ACTIVITY',
-        activityData: {
-          action: 'LOGIN',
-          description: 'User logged in via Email/Password',
-          metadata: { ip: req.ip, userAgent: req.headers['user-agent'] }
-        }
+          targetId: user.id.toString(),
+          targetModel: 'User',
+          type: 'ACTIVITY',
+          activityData: {
+              action: 'LOGIN',
+              description: 'User logged in via Email/Password',
+              metadata: {ip: req.ip, userAgent: req.headers['user-agent']}
+          }
       });
 
       const accessToken = generateAccessToken({ userId: user.id, email: user.email });
@@ -131,14 +131,14 @@ export const googleCallback = asyncHandler(
 
       // 🚨 TRACK EVENT: OAuth Login
       await trackEvent({
-        targetId: user.id.toString(),
-        targetModel: 'User',
-        type: 'ACTIVITY',
-        activityData: {
-          action: 'LOGIN_OAUTH',
-          description: 'User logged in via Google',
-          metadata: { ip: req.ip, userAgent: req.headers['user-agent'] }
-        }
+          targetId: user.id.toString(),
+          targetModel: 'User',
+          type: 'ACTIVITY',
+          activityData: {
+              action: 'LOGIN_OAUTH',
+              description: 'User logged in via Google',
+              metadata: {ip: req.ip, userAgent: req.headers['user-agent']}
+          }
       });
 
       const accessToken = generateAccessToken({ userId: user.id, email: user.email });
@@ -175,13 +175,13 @@ export const verifyEmail = asyncHandler(async (req: Request, res: Response): Pro
 
   // 🚨 TRACK EVENT: Identity Verification
   await trackEvent({
-    targetId: (user._id as Types.ObjectId).toString(),
-    targetModel: 'User',
-    type: 'ACTIVITY',
-    activityData: {
-      action: 'EMAIL_VERIFIED',
-      description: 'User successfully verified their email address',
-    }
+      targetId: (user._id as Types.ObjectId).toString(),
+      targetModel: 'User',
+      type: 'ACTIVITY',
+      activityData: {
+          action: 'EMAIL_VERIFIED',
+          description: 'User successfully verified their email address',
+      }
   });
 
   res.status(HTTP_STATUS.OK).json({
@@ -202,13 +202,13 @@ export const logout = asyncHandler(async (req: Request, res: Response): Promise<
 
   // 🚨 TRACK EVENT: Logout Audit
   await trackEvent({
-    targetId: user.id.toString(),
-    targetModel: 'User',
-    type: 'ACTIVITY',
-    activityData: {
-      action: 'LOGOUT',
-      description: 'User logged out and invalidated session',
-    }
+      targetId: user.id.toString(),
+      targetModel: 'User',
+      type: 'ACTIVITY',
+      activityData: {
+          action: 'LOGOUT',
+          description: 'User logged out and invalidated session',
+      }
   });
 
   if (accessToken) {

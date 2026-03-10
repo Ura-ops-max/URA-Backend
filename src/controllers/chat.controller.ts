@@ -67,13 +67,13 @@ export const accessConversation = async (req: Request, res: Response) => {
 
     // 🚨 TRACK EVENT: Log that a conversation was initiated
     await trackEvent({
-      targetId: senderId,
-      targetModel: senderModel as any,
-      type: 'ACTIVITY',
-      activityData: {
-        action: 'CHAT_INITIATED',
-        description: `You started a conversation with a ${receiverModel}`,
-      }
+        targetId: senderId,
+        targetModel: senderModel as any,
+        type: 'ACTIVITY',
+        activityData: {
+            action: 'CHAT_INITIATED',
+            description: `You started a conversation with a ${receiverModel}`,
+        }
     });
 
     const populatedChat = await Conversation.findById(newConversation._id)
@@ -214,18 +214,18 @@ export const sendMessage = async (req: Request, res: Response) => {
       // 🚨 TRACK EVENT: Notify Receiver (Internal System Notification)
       // This ensures even if they aren't on the chat screen, they get a global notification
       await trackEvent({
-        targetId: receiverId,
-        targetModel: receiver.participantModel as any,
-        type: 'NOTIFICATION',
-        notificationData: {
-          type: 'SOCIAL', // Messaging falls under Social
-          title: 'New Message',
-          message: content ? content.substring(0, 50) : 'Sent a photo',
-          sender: senderId,
-          senderModel: senderModel as any,
-          relatedId: conversationId,
-          modelType: 'User' // Conversations don't have a modelType in your trackEvent, usually mapped to User context
-        }
+          targetId: receiverId,
+          targetModel: receiver.participantModel as any,
+          type: 'NOTIFICATION',
+          notificationData: {
+              type: 'SOCIAL', // Messaging falls under Social
+              title: 'New Message',
+              message: content ? content.substring(0, 50) : 'Sent a photo',
+              sender: senderId,
+              senderModel: senderModel as any,
+              relatedId: conversationId,
+              modelType: 'User' // Conversations don't have a modelType in your trackEvent, usually mapped to User context
+          }
       });
     }
 

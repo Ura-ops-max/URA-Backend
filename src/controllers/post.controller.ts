@@ -301,13 +301,13 @@ export const createPost = asyncHandler(async (req: Request, res: Response): Prom
 
       // 🚨 Log Product Inventory Addition
       await trackEvent({
-        targetId: userId,
-        targetModel: 'User',
-        type: 'ACTIVITY',
-        activityData: {
-          action: 'PRODUCT_CREATE',
-          description: `You added ${req.body.productName} to your inventory`,
-        }
+          targetId: userId,
+          targetModel: 'User',
+          type: 'ACTIVITY',
+          activityData: {
+              action: 'PRODUCT_CREATE',
+              description: `You added ${req.body.productName} to your inventory`,
+          }
       });
     }
   }
@@ -325,14 +325,14 @@ export const createPost = asyncHandler(async (req: Request, res: Response): Prom
 
     // 🚨 TRACK EVENT: Post Published
     await trackEvent({
-      targetId: userId,
-      targetModel: 'User',
-      type: 'ACTIVITY',
-      activityData: {
-        action: 'POST_PUBLISH',
-        description: type === 'PRODUCT' ? `You published a product post` : `You shared a new post`,
-        metadata: { contentPreview: caption?.substring(0, 50) }
-      }
+        targetId: userId,
+        targetModel: 'User',
+        type: 'ACTIVITY',
+        activityData: {
+            action: 'POST_PUBLISH',
+            description: type === 'PRODUCT' ? `You published a product post` : `You shared a new post`,
+            metadata: {contentPreview: caption?.substring(0, 50)}
+        }
     });
   }
 
@@ -362,13 +362,13 @@ export const updateItem = asyncHandler(async (req: Request, res: Response): Prom
     }
 
     await trackEvent({
-      targetId: userId!,
-      targetModel: 'User',
-      type: 'ACTIVITY',
-      activityData: {
-        action: 'PRODUCT_UPDATE',
-        description: `You updated product: ${updatedProduct.name}`,
-      }
+        targetId: userId!,
+        targetModel: 'User',
+        type: 'ACTIVITY',
+        activityData: {
+            action: 'PRODUCT_UPDATE',
+            description: `You updated product: ${updatedProduct.name}`,
+        }
     });
 
     res.json({ success: true, data: updatedProduct });
@@ -391,13 +391,13 @@ export const updateItem = asyncHandler(async (req: Request, res: Response): Prom
     const updatedPost = await Post.findByIdAndUpdate(id, { $set: updates }, { new: true });
 
     await trackEvent({
-      targetId: userId!,
-      targetModel: 'User',
-      type: 'ACTIVITY',
-      activityData: {
-        action: 'POST_UPDATE',
-        description: `You updated a post`,
-      }
+        targetId: userId!,
+        targetModel: 'User',
+        type: 'ACTIVITY',
+        activityData: {
+            action: 'POST_UPDATE',
+            description: `You updated a post`,
+        }
     });
 
     res.json({ success: true, data: updatedPost });
@@ -427,13 +427,13 @@ export const deleteItem = asyncHandler(async (req: Request, res: Response): Prom
     await Post.deleteMany({ product: id });
 
     await trackEvent({
-      targetId: userId!,
-      targetModel: 'User',
-      type: 'ACTIVITY',
-      activityData: {
-        action: 'PRODUCT_DELETE',
-        description: `You deleted product: ${product.name} and its posts`,
-      }
+        targetId: userId!,
+        targetModel: 'User',
+        type: 'ACTIVITY',
+        activityData: {
+            action: 'PRODUCT_DELETE',
+            description: `You deleted product: ${product.name} and its posts`,
+        }
     });
 
     res.json({ success: true, message: "Product and associated posts deleted" });
@@ -447,13 +447,13 @@ export const deleteItem = asyncHandler(async (req: Request, res: Response): Prom
     await Post.findByIdAndDelete(id);
 
     await trackEvent({
-      targetId: userId!,
-      targetModel: 'User',
-      type: 'ACTIVITY',
-      activityData: {
-        action: 'POST_DELETE',
-        description: `You deleted a post`,
-      }
+        targetId: userId!,
+        targetModel: 'User',
+        type: 'ACTIVITY',
+        activityData: {
+            action: 'POST_DELETE',
+            description: `You deleted a post`,
+        }
     });
 
     res.json({ success: true, message: "Post deleted successfully" });

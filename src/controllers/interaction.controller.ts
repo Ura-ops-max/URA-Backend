@@ -46,46 +46,46 @@ export const toggleLike = asyncHandler(async (req: Request, res: Response): Prom
     
     // Only log activity for the actor
     await trackEvent({
-      targetId: userId,
-      targetModel: 'User',
-      type: 'ACTIVITY',
-      activityData: { action: 'UNLIKE', description: `You unliked a ${targetType}` }
+        targetId: userId,
+        targetModel: 'User',
+        type: 'ACTIVITY',
+        activityData: {action: 'UNLIKE', description: `You unliked a ${targetType}`}
     });
   } else {
     postOrProduct.likes.push(new Types.ObjectId(userId));
 
     // Notify the Owner and log Activity
     await trackEvent({
-      targetId: userId, // The actor (for activity)
-      targetModel: 'User',
-      type: 'BOTH',
-      notificationData: {
-        type: 'SOCIAL',
-        title: 'New Like!',
-        message: `${(req as any).user.firstName} liked your ${targetType}.`,
-        sender: userId,
-        senderModel: 'User',
-        relatedId: targetId,
-        modelType: targetType === 'product' ? 'Product' : 'Post',
-        // This part triggers the notification to the owner
-      },
-      activityData: { action: 'LIKE', description: `You liked a ${targetType}` }
+        targetId: userId, // The actor (for activity)
+        targetModel: 'User',
+        type: 'BOTH',
+        notificationData: {
+            type: 'SOCIAL',
+            title: 'New Like!',
+            message: `${(req as any).user.firstName} liked your ${targetType}.`,
+            sender: userId,
+            senderModel: 'User',
+            relatedId: targetId,
+            modelType: targetType === 'product' ? 'Product' : 'Post',
+            // This part triggers the notification to the owner
+        },
+        activityData: {action: 'LIKE', description: `You liked a ${targetType}`}
     });
 
     // Send the actual notification to the owner separately
     await trackEvent({
-      targetId: postOrProduct[ownerField].toString(),
-      targetModel: ownerModel,
-      type: 'NOTIFICATION',
-      notificationData: {
-        type: 'SOCIAL',
-        title: 'New Like!',
-        message: `${(req as any).user.firstName} liked your ${targetType}.`,
-        sender: userId,
-        senderModel: 'User',
-        relatedId: targetId,
-        modelType: targetType === 'product' ? 'Product' : 'Post',
-      }
+        targetId: postOrProduct[ownerField].toString(),
+        targetModel: ownerModel,
+        type: 'NOTIFICATION',
+        notificationData: {
+            type: 'SOCIAL',
+            title: 'New Like!',
+            message: `${(req as any).user.firstName} liked your ${targetType}.`,
+            sender: userId,
+            senderModel: 'User',
+            relatedId: targetId,
+            modelType: targetType === 'product' ? 'Product' : 'Post',
+        }
     });
   }
 
@@ -109,10 +109,10 @@ export const toggleBookmark = asyncHandler(async (req: Request, res: Response): 
     await User.findByIdAndUpdate(userId, { $pull: { [bookmarkField]: targetId } });
     
     await trackEvent({
-      targetId: userId,
-      targetModel: 'User',
-      type: 'ACTIVITY',
-      activityData: { action: 'UNBOOKMARK', description: `Removed ${targetType} from bookmarks` }
+        targetId: userId,
+        targetModel: 'User',
+        type: 'ACTIVITY',
+        activityData: {action: 'UNBOOKMARK', description: `Removed ${targetType} from bookmarks`}
     });
 
     res.json({ success: true, isBookmarked: false });
@@ -123,26 +123,26 @@ export const toggleBookmark = asyncHandler(async (req: Request, res: Response): 
     // If it's a business, notify the business owner
     if (targetType === 'Business') {
       await trackEvent({
-        targetId: targetId, // The Business ID
-        targetModel: 'Business',
-        type: 'NOTIFICATION',
-        notificationData: {
-          type: 'BUSINESS',
-          title: 'New Bookmark',
-          message: `${user?.firstName} bookmarked your business.`,
-          sender: userId,
-          senderModel: 'User',
-          relatedId: targetId,
-          modelType: 'Business'
-        }
+          targetId: targetId, // The Business ID
+          targetModel: 'Business',
+          type: 'NOTIFICATION',
+          notificationData: {
+              type: 'BUSINESS',
+              title: 'New Bookmark',
+              message: `${user?.firstName} bookmarked your business.`,
+              sender: userId,
+              senderModel: 'User',
+              relatedId: targetId,
+              modelType: 'Business'
+          }
       });
     }
 
     await trackEvent({
-      targetId: userId,
-      targetModel: 'User',
-      type: 'ACTIVITY',
-      activityData: { action: 'BOOKMARK', description: `Bookmarked a ${targetType}` }
+        targetId: userId,
+        targetModel: 'User',
+        type: 'ACTIVITY',
+        activityData: {action: 'BOOKMARK', description: `Bookmarked a ${targetType}`}
     });
 
     res.json({ success: true, isBookmarked: true });
@@ -166,10 +166,10 @@ export const toggleFollow = asyncHandler(async (req: Request, res: Response): Pr
     await (TargetModel as any).findByIdAndUpdate(targetId, { $pull: { followers: userId } });
 
     await trackEvent({
-      targetId: userId,
-      targetModel: 'User',
-      type: 'ACTIVITY',
-      activityData: { action: 'UNFOLLOW', description: `Unfollowed a ${isBusiness ? 'Business' : 'User'}` }
+        targetId: userId,
+        targetModel: 'User',
+        type: 'ACTIVITY',
+        activityData: {action: 'UNFOLLOW', description: `Unfollowed a ${isBusiness ? 'Business' : 'User'}`}
     });
 
     res.status(200).json({ message: "Unfollowed", isFollowing: false });
@@ -181,23 +181,23 @@ export const toggleFollow = asyncHandler(async (req: Request, res: Response): Pr
 
     // Notify the recipient
     await trackEvent({
-      targetId: targetId,
-      targetModel: isBusiness ? 'Business' : 'User',
-      type: 'NOTIFICATION',
-      notificationData: {
-        type: 'SOCIAL',
-        title: 'New Follower',
-        message: `${user?.firstName} started following you.`,
-        sender: userId,
-        senderModel: 'User'
-      }
+        targetId: targetId,
+        targetModel: isBusiness ? 'Business' : 'User',
+        type: 'NOTIFICATION',
+        notificationData: {
+            type: 'SOCIAL',
+            title: 'New Follower',
+            message: `${user?.firstName} started following you.`,
+            sender: userId,
+            senderModel: 'User'
+        }
     });
 
     await trackEvent({
-      targetId: userId,
-      targetModel: 'User',
-      type: 'ACTIVITY',
-      activityData: { action: 'FOLLOW', description: `Followed a ${isBusiness ? 'Business' : 'User'}` }
+        targetId: userId,
+        targetModel: 'User',
+        type: 'ACTIVITY',
+        activityData: {action: 'FOLLOW', description: `Followed a ${isBusiness ? 'Business' : 'User'}`}
     });
 
     res.status(200).json({ message: "Followed", isFollowing: true });
@@ -221,18 +221,18 @@ export const toggleWishlist = asyncHandler(async (req: Request, res: Response): 
 
     // Notify the Business Owner
     await trackEvent({
-      targetId: product.business.toString(),
-      targetModel: 'Business',
-      type: 'NOTIFICATION',
-      notificationData: {
-        type: 'BUSINESS',
-        title: 'Product Wishlisted',
-        message: `Someone added ${product.name} to their wishlist.`,
-        sender: userId,
-        senderModel: 'User',
-        relatedId: productId,
-        modelType: 'Product'
-      }
+        targetId: product.business.toString(),
+        targetModel: 'Business',
+        type: 'NOTIFICATION',
+        notificationData: {
+            type: 'BUSINESS',
+            title: 'Product Wishlisted',
+            message: `Someone added ${product.name} to their wishlist.`,
+            sender: userId,
+            senderModel: 'User',
+            relatedId: productId,
+            modelType: 'Product'
+        }
     });
 
     res.json({ success: true, isWishlisted: true });
@@ -265,29 +265,29 @@ export const toggleCommentLike = asyncHandler(async (req: Request, res: Response
 
     // 1. Log Activity for the Liker
     await trackEvent({
-      targetId: auth.userId.toString(),
-      targetModel: authorType,
-      type: 'ACTIVITY',
-      activityData: {
-        action: 'COMMENT_LIKE',
-        description: `You liked a comment`,
-      }
+        targetId: auth.userId.toString(),
+        targetModel: authorType,
+        type: 'ACTIVITY',
+        activityData: {
+            action: 'COMMENT_LIKE',
+            description: `You liked a comment`,
+        }
     });
 
     // 2. Notify the Comment Author
     await trackEvent({
-      targetId: comment.author.toString(),
-      targetModel: 'User',
-      type: 'NOTIFICATION',
-      notificationData: {
-        type: 'LIKE',
-        title: 'New Like',
-        message: `liked your comment`,
-        sender: auth.userId.toString(),
-        senderModel: authorType,
-        relatedId: (comment._id as any).toString(),
-        modelType: 'Comment'
-      }
+        targetId: comment.author.toString(),
+        targetModel: 'User',
+        type: 'NOTIFICATION',
+        notificationData: {
+            type: 'LIKE',
+            title: 'New Like',
+            message: `liked your comment`,
+            sender: auth.userId.toString(),
+            senderModel: authorType,
+            relatedId: (comment._id as any).toString(),
+            modelType: 'Comment'
+        }
     });
   }
 

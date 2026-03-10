@@ -1,8 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import passport from 'passport';
 import { AuthenticationError } from '@/utils/errors';
-import { User } from '@/models/user-model';
-import { asyncHandler } from './errorHandler';
 
 /**
  * Passport JWT authentication middleware

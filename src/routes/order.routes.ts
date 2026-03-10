@@ -1,7 +1,7 @@
 import express from 'express';
 import { requireAuth } from '@/middleware/passport-auth';
-import { 
-    createOrderFromCart, 
+import {
+    createOrderFromCart,
     getMyOrders,
     getOrderById
 } from '@/controllers/order.controller';

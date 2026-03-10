@@ -3,38 +3,23 @@ import { Activity } from '@/models/activity-model';
 import { socketService } from './socket.service';
 
 export const trackEvent = async (params: {
-  // Who is receiving the notification or performing the activity
   targetId: string;
-  targetModel: 'User' | 'Business' | 'Order' | 'Post' | 'Comment';
-
+  targetModel: string;
   type: 'ACTIVITY' | 'NOTIFICATION' | 'BOTH';
-
-  notificationData?: {
-    type: 'SECURITY' | 'SOCIAL' | 'BUSINESS' | 'SYSTEM' | 'COMMENT' | 'LIKE';
-    title: string;
-    message: string;
-    link?: string;
-
-    // Dynamic Sender
-    sender: string;
-    senderModel: 'User' | 'Business';
-
-    // Dynamic Related Object
-    relatedId?: string;
-    modelType?: 'Post' | 'Business' | 'Product' | 'User' | 'Order' | 'Comment';
-  };
-
-  activityData?: {
+  activityData: {
     action: string;
     description: string;
-    metadata?: {
-      ip?: string | undefined;        // Add | undefined here
-      userAgent?: string | undefined; // Add | undefined here
-      device?: string | undefined;
-      location?: string | undefined;
-      contentPreview?: string;
-    };
+   metadata?: Record<any, any>
   };
+  notificationData?: {
+    type: string;
+    title: string;
+    message: `Order ${any} has been paid.`;
+    sender: string;
+    senderModel: string;
+    relatedId: string;
+    modelType: string
+  }
 }) => {
   const { targetId, targetModel, type, notificationData, activityData } = params;
 

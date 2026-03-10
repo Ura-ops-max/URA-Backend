@@ -46,30 +46,30 @@ export const createComment = asyncHandler(async (req: Request, res: Response): P
   if (targetPost) {
     // 1. Log Activity for the Commenter
     await trackEvent({
-      targetId: auth.userId.toString(),
-      targetModel: authorType,
-      type: 'ACTIVITY',
-      activityData: {
-        action: 'COMMENT_CREATE',
-        description: `You commented on a post`,
-        metadata: { contentPreview: content.substring(0, 50) }
-      }
+        targetId: auth.userId.toString(),
+        targetModel: authorType,
+        type: 'ACTIVITY',
+        activityData: {
+            action: 'COMMENT_CREATE',
+            description: `You commented on a post`,
+            metadata: {contentPreview: content.substring(0, 50)}
+        }
     });
 
     // 2. Send Notification to the Post Owner
     await trackEvent({
-      targetId: targetPost.author.toString(),
-      targetModel: 'User', // Post authors are stored as User IDs
-      type: 'NOTIFICATION',
-      notificationData: {
-        type: 'COMMENT',
-        title: 'New Comment',
-        message: `commented on your post: "${content.substring(0, 30)}..."`,
-        sender: auth.userId.toString(),
-        senderModel: authorType,
-        relatedId: postId,
-        modelType: 'Post'
-      }
+        targetId: targetPost.author.toString(),
+        targetModel: 'User', // Post authors are stored as User IDs
+        type: 'NOTIFICATION',
+        notificationData: {
+            type: 'COMMENT',
+            title: 'New Comment',
+            message: `commented on your post: "${content.substring(0, 30)}..."`,
+            sender: auth.userId.toString(),
+            senderModel: authorType,
+            relatedId: postId,
+            modelType: 'Post'
+        }
     });
   }
 
@@ -147,29 +147,29 @@ export const toggleCommentLike = asyncHandler(async (req: Request, res: Response
 
     // 1. Log Activity for the Liker
     await trackEvent({
-      targetId: auth.userId.toString(),
-      targetModel: authorType,
-      type: 'ACTIVITY',
-      activityData: {
-        action: 'COMMENT_LIKE',
-        description: `You liked a comment`,
-      }
+        targetId: auth.userId.toString(),
+        targetModel: authorType,
+        type: 'ACTIVITY',
+        activityData: {
+            action: 'COMMENT_LIKE',
+            description: `You liked a comment`,
+        }
     });
 
     // 2. Notify the Comment Author
     await trackEvent({
-      targetId: comment.author.toString(),
-      targetModel: 'User',
-      type: 'NOTIFICATION',
-      notificationData: {
-        type: 'LIKE',
-        title: 'New Like',
-        message: `liked your comment`,
-        sender: auth.userId.toString(),
-        senderModel: authorType,
-        relatedId: (comment._id as any).toString(),
-        modelType: 'Comment'
-      }
+        targetId: comment.author.toString(),
+        targetModel: 'User',
+        type: 'NOTIFICATION',
+        notificationData: {
+            type: 'LIKE',
+            title: 'New Like',
+            message: `liked your comment`,
+            sender: auth.userId.toString(),
+            senderModel: authorType,
+            relatedId: (comment._id as any).toString(),
+            modelType: 'Comment'
+        }
     });
   }
 

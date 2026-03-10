@@ -65,31 +65,31 @@ export const createReview = async (req: Request, res: Response) => {
 
     // 2. Log Activity for the Reviewer
     await trackEvent({
-      targetId: userId,
-      targetModel: 'User',
-      type: 'ACTIVITY',
-      activityData: {
-        action: 'REVIEW_CREATE',
-        description: `You gave a ${rating}-star review to ${itemName}`,
-        metadata: { contentPreview: comment?.substring(0, 50) }
-      }
+        targetId: userId,
+        targetModel: 'User',
+        type: 'ACTIVITY',
+        activityData: {
+            action: 'REVIEW_CREATE',
+            description: `You gave a ${rating}-star review to ${itemName}`,
+            metadata: {contentPreview: comment?.substring(0, 50)}
+        }
     });
 
     // 3. Notify the Owner
     if (recipientId) {
       await trackEvent({
-        targetId: recipientId,
-        targetModel: 'User',
-        type: 'NOTIFICATION',
-        notificationData: {
-          type: 'BUSINESS',
-          title: 'New Review Received',
-          message: `left a ${rating}-star review on ${itemName}`,
-          sender: userId,
-          senderModel: 'User',
-          relatedId: (review._id as any).toString(),
-          modelType: reviewedItemModel as any
-        }
+          targetId: recipientId,
+          targetModel: 'User',
+          type: 'NOTIFICATION',
+          notificationData: {
+              type: 'BUSINESS',
+              title: 'New Review Received',
+              message: `left a ${rating}-star review on ${itemName}`,
+              sender: userId,
+              senderModel: 'User',
+              relatedId: (review._id as any).toString(),
+              modelType: reviewedItemModel as any
+          }
       });
     }
 
