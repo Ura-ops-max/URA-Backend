@@ -8,6 +8,9 @@ export interface IUser extends Document {
   username: string;
   email: string;
   password?: string; // Optional for OAuth users
+    phone?: string;
+    bvn?: string;
+    paylukCustomerId?: string;
   bio?: string;
   googleId?: string;
   appleId?: string;
@@ -64,6 +67,9 @@ const userSchema = new Schema<IUser>(
     followingBusinesses: [{ type: Schema.Types.ObjectId, ref: 'Business' }],
     followers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     businesses: [{ type: Schema.Types.ObjectId, ref: 'Business' }],
+      phone: { type: String, trim: true },
+      bvn: { type: String, select: false },
+      paylukCustomerId: { type: String, sparse: true }
   },
   { timestamps: true }
 ); // Automatically adds createdAt and updatedAt
@@ -85,5 +91,7 @@ userSchema.pre<IUser>('save', function (next) {
 
   next();
 });
+
+
 
 export const User = model<IUser>('User', userSchema);

@@ -3,7 +3,7 @@ import { requireAuth } from '@/middleware/passport-auth';
 import {
     createOrderFromCart,
     getMyOrders,
-    getOrderById
+    getOrderById, setupPaylukCustomer
 } from '@/controllers/order.controller';
 
 const router = express.Router();
@@ -11,6 +11,7 @@ const router = express.Router();
 router.use(requireAuth);
 
 router.post('/checkout', createOrderFromCart);
+router.post('/setup-payment-profile', setupPaylukCustomer);
 router.get('/my-orders', getMyOrders);     // GET /api/orders/my-orders
 router.get('/:id', getOrderById);          // GET /api/orders/:id
 export default router;
