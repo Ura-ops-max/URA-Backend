@@ -14,7 +14,7 @@ export const trackEvent = async (params: {
   notificationData?: {
     type: string;
     title: string;
-    message: `Order ${any} has been paid.`;
+    message: string;
     sender: string;
     senderModel: string;
     relatedId: string;

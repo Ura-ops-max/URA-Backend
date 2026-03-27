@@ -14,13 +14,7 @@ export const createPostField = {
 
   tags: Joi.array().items(Joi.string()).optional().default([]),
 
-  // For Requirement 6: Linking an existing product
   productId: Joi.string().optional().allow(null),
-
-  // Media logic: 
-  // 1. Mandatory if creating a new PRODUCT.
-  // 2. Optional if it's a POST (social update).
-  // 3. Not needed if POST is linking an existing productId.
   media: Joi.when('type', {
     is: 'PRODUCT',
     then: Joi.array().items(Joi.string()).min(1).required().messages({
@@ -30,8 +24,6 @@ export const createPostField = {
     otherwise: Joi.array().items(Joi.string()).optional()
   }),
 
-  // PRODUCT SPECIFIC FIELDS
-  // These are required ONLY when type is 'PRODUCT'
   productName: Joi.when('type', { 
     is: 'PRODUCT', 
     then: Joi.string().required() 
@@ -53,7 +45,27 @@ export const createPostField = {
     then: Joi.number().integer().min(0).required().messages({ 'any.required': 'Stock quantity is required.' }) 
   }),
   size: Joi.string().allow('').optional(),
-  
+
+  // ── Payluk escrow fields (required when type === PRODUCT) ──────
+  // Who bears the Payluk platform fee.
+  whoPays: Joi.when('type', {
+    is:   'PRODUCT',
+    then: Joi.string().valid('buyer', 'seller', 'both').default('seller'),
+  }),
+
+  // How long the seller has to deliver after payment.
+  maxDelivery: Joi.when('type', {
+    is:   'PRODUCT',
+    then: Joi.number().integer().min(1).default(3),
+  }),
+
+  // Unit for maxDelivery.
+  deliveryTimeline: Joi.when('type', {
+    is:   'PRODUCT',
+    then: Joi.string().valid('hours', 'days', 'minutes').default('days'),
+  }),
+  // ──────────────────────────────────────────────────────────────
+
   // Flag to tell the controller: "I created a product, now also create a Post for it"
   publishToFeed: Joi.boolean().default(false)
 };

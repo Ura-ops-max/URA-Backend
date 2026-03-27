@@ -1,214 +1,328 @@
-import axios from 'axios';
+import axios, { AxiosInstance, AxiosError } from 'axios';
 
-// Strip trailing slash to avoid double-slash in paths
+// ─────────────────────────────────────────────────────────────
+// CONFIG
+// ─────────────────────────────────────────────────────────────
 const API_BASE = (process.env.PAYLUK_API_BASE || 'https://staging.api.payluk.ng').replace(/\/$/, '');
-const SECRET = process.env.PAYLUK_SECRET_KEY || '';
+const SECRET   = process.env.PAYLUK_SECRET_KEY || '';
 
 if (!SECRET) {
     console.warn('⚠️  PAYLUK_SECRET_KEY missing. Add to .env for Payluk integration.');
 }
 
-// Base headers — customer-id is added per-call where required
-const baseHeaders = () => ({
-    Authorization: `Bearer ${SECRET}`,
-    'Content-Type': 'application/json'
+// ─────────────────────────────────────────────────────────────
+// CUSTOM ERROR CLASS
+// Gives callers structured access to error info
+// ─────────────────────────────────────────────────────────────
+export class PaylukError extends Error {
+    public readonly statusCode: number;
+    public readonly raw: unknown;
+
+    constructor(message: string, statusCode = 500, raw?: unknown) {
+        super(message);
+        this.name       = 'PaylukError';
+        this.statusCode = statusCode;
+        this.raw        = raw;
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// AXIOS INSTANCE
+// Shared config, interceptors, and retry logic live here
+// ─────────────────────────────────────────────────────────────
+const paylukAxios: AxiosInstance = axios.create({
+    baseURL: API_BASE,
+    timeout: 15_000,
+    headers: {
+        'Content-Type': 'application/json',
+        Authorization:  `Bearer ${SECRET}`,
+    },
 });
 
+// Request interceptor — attach auth header fresh on every call
+// (handles hot-reloaded env vars in dev)
+paylukAxios.interceptors.request.use((config) => {
+    config.headers.Authorization = `Bearer ${SECRET}`;
+    return config;
+});
 
-// ─────────────────────────────────────────────
-// Create a Payluk customer profile
-// POST /v1/customer/create
-// ─────────────────────────────────────────────
-type CreateCustomerOpts = {
+// Response interceptor — normalise errors into PaylukError
+paylukAxios.interceptors.response.use(
+    (res) => res,
+    (err: AxiosError<{ message?: string; error?: string }>) => {
+        const status  = err.response?.status ?? 500;
+        const message =
+            err.response?.data?.message ||
+            err.response?.data?.error   ||
+            err.message                 ||
+            'Unknown Payluk error';
+
+        console.error(`❌ [Payluk] ${status} – ${message}`, {
+            url:  err.config?.url,
+            body: err.config?.data,
+        });
+
+        return Promise.reject(new PaylukError(message, status, err.response?.data));
+    },
+);
+
+// ─────────────────────────────────────────────────────────────
+// RETRY HELPER
+// Retries idempotent requests up to `maxRetries` times
+// with exponential backoff (only on network / 5xx errors)
+// ─────────────────────────────────────────────────────────────
+async function withRetry<T>(
+    fn: () => Promise<T>,
+    maxRetries = 2,
+    label      = 'Payluk',
+): Promise<T> {
+    let attempt = 0;
+
+    while (true) {
+        try {
+            return await fn();
+        } catch (err) {
+            const isRetryable =
+                err instanceof PaylukError && err.statusCode >= 500;
+
+            if (!isRetryable || attempt >= maxRetries) throw err;
+
+            const delay = 300 * 2 ** attempt; // 300ms, 600ms …
+            console.warn(`⚠️  [${label}] Retrying (${attempt + 1}/${maxRetries}) in ${delay}ms…`);
+            await new Promise((r) => setTimeout(r, delay));
+            attempt++;
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// SAFE DATA EXTRACTOR
+// Payluk sometimes nests under data.data and sometimes not
+// ─────────────────────────────────────────────────────────────
+function extractData<T>(raw: unknown): T {
+    return ((raw as any)?.data ?? raw) as T;
+}
+
+// ─────────────────────────────────────────────────────────────
+// TYPES
+// ─────────────────────────────────────────────────────────────
+
+// ---------- Customer ----------
+export type CreateCustomerOpts = {
     firstName: string;
-    lastName: string;
-    email: string;
-    phone: string;
-    bvn: string;
+    lastName:  string;
+    email:     string;
+    phone:     string;
+    bvn:       string;
 };
 
 export type CreateCustomerResult = {
-    raw: any;
+    raw:        unknown;
     customerId: string;
 };
 
-export const createPaylukCustomer = async (opts: CreateCustomerOpts): Promise<CreateCustomerResult> => {
-    const url = `${API_BASE}/v1/customer/create`;
-
-    const payload = {
-        firstname: opts.firstName,
-        lastname: opts.lastName,
-        email: opts.email,
-        phone: opts.phone,
-        bvn: opts.bvn,
-    };
-
-    console.log('🔍 [createPaylukCustomer] URL:', url);
-    console.log('🔍 [createPaylukCustomer] Payload:', payload);
-
-    const resp = await axios.post(url, payload, {
-        headers: baseHeaders(),
-        timeout: 15_000
-    });
-
-    const data = resp.data?.data || resp.data;
-    const customerId = data?.id || data?._id || data?.customerId;
-
-    if (!customerId) {
-        console.error('❌ [createPaylukCustomer] No customerId in response:', resp.data);
-        throw new Error('Payluk did not return a customerId');
-    }
-
-    return { raw: resp.data, customerId };
+// ---------- Escrow ----------
+export type CreatePaymentLinkOpts = {
+    /** Amount in NGN (e.g. 5000 for ₦5,000) */
+    amount:           number;
+    /** Short title e.g. "iPhone 18 Purchase" */
+    purpose:          string;
+    /** Longer product/order description */
+    description?:     string;
+    /** Who bears the escrow fee. Defaults to 'buyer' */
+    whoPays?:         'buyer' | 'seller' | 'both';
+    /** Delivery window number (e.g. 3) */
+    maxDelivery?:     number;
+    /** Unit for maxDelivery */
+    deliveryTimeline?: 'hours' | 'days' | 'minutes';
+    /** Total quantity of items */
+    totalQuantity?:   number;
+    /** Optional Payluk category ID */
+    categoryId?:      string;
+    /** Optional product image URL */
+    imageUrl?:        string | null;
+    /** Redirect URL after payment */
+    callbackUrl?:     string;
+    /** The BUYER's Payluk customer ID (sent as customer-id header) */
+    customerId:       string;
 };
 
-// ─────────────────────────────────────────────
-// STEP 1: Seller creates the escrow payment link
-// POST /v1/escrow/create
-// ─────────────────────────────────────────────
-type CreateEscrowOpts = {
-    amount: number;           // Amount in NGN (e.g. 5000 for ₦5,000)
-    purpose: string;          // Short title e.g. "iPhone 18 Purchase"
-    description?: string;     // Longer product/order description
-    whoPays?: 'buyer' | 'seller'; // Who bears the escrow fee. Defaults to 'buyer'
-    maxDelivery?: number;     // Delivery window number (e.g. 3)
-    deliveryTimeline?: 'hours' | 'days' | 'weeks'; // Unit for maxDelivery
-    totalQuantity?: number;   // Total quantity of items
-    categoryId?: string;      // Optional category ID
-    imageUrl?: string;        // Optional product image URL
-    callbackUrl?: string;     // Redirect URL after payment
-    customerId: string;       // The BUYER's Payluk customer ID
+export type CreatePaymentLinkResult = {
+    raw:          unknown;
+    escrowId:     string;
+    paymentToken: string;
+    paymentUrl?:  string;
 };
 
-export type CreateEscrowResult = {
-    raw: any;
-    escrowId: string;         // ID to pass into initEscrowPayment
-    paymentToken: string;     // Token for Inline Checkout
-    paymentUrl?: string;      // Hosted payment page URL (if provided)
-};
-
-export const createEscrow = async (opts: CreateEscrowOpts): Promise<CreateEscrowResult> => {
-    const url = `${API_BASE}/v1/escrow/create`;
-
-    const payload = {
-        amount: opts.amount,
-        purpose: opts.purpose,
-        description: opts.description || opts.purpose,
-        whoPays: opts.whoPays || 'buyer',
-        maxDelivery: opts.maxDelivery ?? 3,
-        deliveryTimeline: opts.deliveryTimeline || 'days',
-        totalQuantity: opts.totalQuantity ?? 1,
-        ...(opts.categoryId && { categoryId: opts.categoryId }),
-        ...(opts.imageUrl && { imageUrl: opts.imageUrl }),
-        ...(opts.callbackUrl && { callbackUrl: opts.callbackUrl }),
-    };
-
-    console.log('🔍 [createEscrow] URL:', url);
-    console.log('🔍 [createEscrow] Payload:', payload);
-
-    const resp = await axios.post(url, payload, {
-        headers: {
-            ...baseHeaders(),
-            'customer-id': opts.customerId,   // Required: buyer's customer ID
-        },
-        timeout: 15_000
-    });
-
-    const data = resp.data?.data || resp.data;
-
-    const escrowId = data?.id || data?.escrowId || data?._id;
-    const paymentToken = data?.paymentToken || data?.token || data?.payment_token;
-    const paymentUrl = data?.paymentUrl || data?.url || data?.payment_url;
-
-    if (!escrowId) {
-        console.error('❌ [createEscrow] Could not find escrowId in response:', resp.data);
-        throw new Error('Payluk createEscrow did not return an escrowId');
-    }
-    if (!paymentToken) {
-        console.error('❌ [createEscrow] Could not find paymentToken in response:', resp.data);
-        throw new Error('Payluk createEscrow did not return a paymentToken');
-    }
-
-    return { raw: resp.data, escrowId, paymentToken, paymentUrl };
-};
-
-// ─────────────────────────────────────────────
-// STEP 2: Buyer pays into the escrow
-// POST /v1/payment/escrow
-// ─────────────────────────────────────────────
-type InitPaymentOpts = {
-    amount: number;           // Amount in NGN — must match the escrow amount
-    escrowId: string;         // From createEscrow result
-    orderId: string;          // Your internal order ID (used as reference)
-    customerId: string;       // The BUYER's Payluk customer ID (required header)
-    gateway?: 'wallet' | 'card';
-    cardId?: string;          // Only required when gateway === 'card'
+// ---------- Payment ----------
+export type InitPaymentOpts = {
+    /** Amount in NGN — must match the escrow amount */
+    amount:      number;
+    /** From createEscrow result */
+    escrowId:    string;
+    /** Your internal order/reference ID */
+    orderId:     string;
+    /** The BUYER's Payluk customer ID */
+    customerId:  string;
+    gateway?:    'wallet' | 'card';
+    /** Only required when gateway === 'card' */
+    cardId?:     string;
 };
 
 export type InitPaymentResult = {
-    raw: any;
+    raw:           unknown;
     paymentToken?: string;
-    paymentUrl?: string;
+    paymentUrl?:   string;
 };
 
-export const initEscrowPayment = async (opts: InitPaymentOpts): Promise<InitPaymentResult> => {
-    const url = `${API_BASE}/v1/payment/escrow`;
-
-    const payload: Record<string, any> = {
-        amount: opts.amount,
-        reference: `order_${opts.orderId}_${Date.now()}`,  // Unique reference
-        gateway: opts.gateway || 'card',
-        transactionType: 'escrow',
-        escrowDetails: {
-            escrowId: opts.escrowId,
-        },
-    };
-
-    // cardId is only sent when paying with a saved card
-    if (opts.gateway === 'card' && opts.cardId) {
-        payload.cardId = opts.cardId;
-    }
-
-    console.log('🔍 [initEscrowPayment] URL:', url);
-    console.log('🔍 [initEscrowPayment] Payload:', payload);
-
-    const resp = await axios.post(url, payload, {
-        headers: {
-            ...baseHeaders(),
-            'customer-id': opts.customerId,   // Required header
-        },
-        timeout: 15_000
-    });
-
-    const data = resp.data?.data || resp.data;
-    const paymentToken = data?.paymentToken || data?.token || data?.payment_token || data?.reference;
-    const paymentUrl = data?.paymentUrl || data?.url || data?.payment_url;
-
-    return { raw: resp.data, paymentToken, paymentUrl };
+// ---------- Verify ----------
+export type VerifyPaymentResult = {
+    raw:            unknown;
+    status:         string;
+    transactionRef?: string;
+    amount?:        number;
+    metadata:       Record<string, unknown>;
 };
 
-// ─────────────────────────────────────────────
-// Verify an escrow payment by paymentToken/ID
-// GET /v1/escrow/verify/:paymentId
-// ─────────────────────────────────────────────
-export const verifyPaymentToken = async (paymentToken: string) => {
-    // Note: no /v1 prefix — verify lives at /escrow/verify per the API docs
-    const url = `${API_BASE}/v1/escrow/verify/${encodeURIComponent(paymentToken)}`;
+// ─────────────────────────────────────────────────────────────
+// SERVICE METHODS
+// ─────────────────────────────────────────────────────────────
 
-    console.log('🔍 [verifyPaymentToken] URL:', url);
+/**
+ * Create a Payluk customer profile.
+ * POST /v1/customer/create
+ */
+export const createPaylukCustomer = async (
+    opts: CreateCustomerOpts,
+): Promise<CreateCustomerResult> =>
+    withRetry(async () => {
+        console.log('🔍 [createPaylukCustomer]', { email: opts.email });
 
-    const resp = await axios.get(url, {
-        headers: baseHeaders(),
-        timeout: 10_000
-    });
+        const resp = await paylukAxios.post('/v1/customer/create', {
+            firstname: opts.firstName,
+            lastname:  opts.lastName,
+            email:     opts.email,
+            phone:     opts.phone,
+            bvn:       opts.bvn,
+        });
 
-    const data = resp.data?.data || resp.data;
+        const data       = extractData<Record<string, any>>(resp.data);
+        const customerId = data?.id || data?._id || data?.customerId;
 
-    return {
-        raw: resp.data,
-        status: data?.status || resp.data?.status,
-        transactionRef: data?.transactionRef || data?.trx_ref || data?.reference,
-        amount: data?.amount,
-        metadata: data?.metadata || {}
-    };
-};
+        if (!customerId) {
+            throw new PaylukError('Payluk did not return a customerId', 502, resp.data);
+        }
+
+        return { raw: resp.data, customerId };
+    }, 2, 'createPaylukCustomer');
+
+
+/**
+ * Seller creates an escrow payment link.
+ * POST /v1/escrow/create
+ *
+ * The buyer's customerId is sent as the `customer-id` header so Payluk
+ * links this escrow to the correct buyer account.
+ */
+export const createPaymentLink = async (
+    opts: CreatePaymentLinkOpts,
+): Promise<CreatePaymentLinkResult> =>
+    withRetry(async () => {
+        console.log('🔍 [createEscrow]', { amount: opts.amount, purpose: opts.purpose });
+
+        const resp = await paylukAxios.post(
+            '/v1/escrow/create',
+            {
+                amount:           opts.amount,
+                purpose:          opts.purpose,
+                description:      opts.description || opts.purpose,
+                whoPays:          opts.whoPays        || 'buyer',
+                maxDelivery:      opts.maxDelivery    ?? 3,
+                deliveryTimeline: opts.deliveryTimeline || 'days',
+                totalQuantity:    opts.totalQuantity  ?? 1,
+                ...(opts.categoryId  && { categoryId:  opts.categoryId }),
+                ...(opts.imageUrl    && { imageUrl:    opts.imageUrl }),
+                ...(opts.callbackUrl && { callbackUrl: opts.callbackUrl }),
+            },
+            { headers: { 'customer-id': opts.customerId } },
+        );
+
+        const data         = extractData<Record<string, any>>(resp.data);
+        const escrowId     = data?.id     || data?.escrowId    || data?._id;
+        const paymentToken = data?.paymentToken || data?.token || data?.payment_token;
+        const paymentUrl   = data?.paymentUrl   || data?.url   || data?.payment_url;
+
+        if (!escrowId) {
+            throw new PaylukError('Payluk createEscrow did not return an escrowId', 502, resp.data);
+        }
+        if (!paymentToken) {
+            throw new PaylukError('Payluk createEscrow did not return a paymentToken', 502, resp.data);
+        }
+
+        return { raw: resp.data, escrowId, paymentToken, paymentUrl };
+    }, 2, 'createEscrow');
+
+
+/**
+ * Buyer pays into the escrow.
+ * POST /v1/payment/escrow
+ *
+ * Call this AFTER createEscrow — pass the escrowId from that result.
+ */
+export const initEscrowPayment = async (
+    opts: InitPaymentOpts,
+): Promise<InitPaymentResult> =>
+    withRetry(async () => {
+        console.log('🔍 [initEscrowPayment]', { escrowId: opts.escrowId, gateway: opts.gateway });
+
+        const payload: Record<string, unknown> = {
+            amount:          opts.amount,
+            reference:       `order_${opts.orderId}_${Date.now()}`,
+            gateway:         opts.gateway || 'card',
+            transactionType: 'escrow',
+            escrowDetails:   { escrowId: opts.escrowId },
+        };
+
+        if (opts.gateway === 'card' && opts.cardId) {
+            payload.cardId = opts.cardId;
+        }
+
+        const resp = await paylukAxios.post('/v1/payment/escrow', payload, {
+            headers: { 'customer-id': opts.customerId },
+        });
+
+        const data         = extractData<Record<string, any>>(resp.data);
+        const paymentToken = data?.paymentToken || data?.token || data?.payment_token || data?.reference;
+        const paymentUrl   = data?.paymentUrl   || data?.url   || data?.payment_url;
+
+        return { raw: resp.data, paymentToken, paymentUrl };
+    }, 2, 'initEscrowPayment');
+
+
+/**
+ * Verify an escrow payment by its paymentToken or paymentId.
+ * GET /v1/escrow/verify/:paymentId
+ *
+ * Call this server-side after receiving a webhook or client callback
+ * to confirm payment before releasing goods/services.
+ */
+export const verifyPaymentToken = async (
+    paymentToken: string,
+): Promise<VerifyPaymentResult> =>
+    withRetry(async () => {
+        console.log('🔍 [verifyPaymentToken]', { paymentToken });
+
+        const resp = await paylukAxios.get(
+            `/v1/escrow/verify/${encodeURIComponent(paymentToken)}`,
+        );
+
+        const data = extractData<Record<string, any>>(resp.data);
+
+        return {
+            raw:            resp.data,
+            status:         data?.status || resp.data?.status,
+            transactionRef: data?.transactionRef || data?.trx_ref || data?.reference,
+            amount:         data?.amount,
+            metadata:       data?.metadata || {},
+        };
+    }, 2, 'verifyPaymentToken');

@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import Order from '@/models/order-model';
 import Cart from '@/models/cart-model';
 import { trackEvent } from '@/services/track-event.service';
-import { createEscrow, createPaylukCustomer } from '@/services/payluk.service';
+import { createPaylukCustomer } from '@/services/payluk.service';
 import { User } from '@/models/user-model';
 
 // ─────────────────────────────────────────────
@@ -112,25 +112,25 @@ export const createOrderFromCart = async (req: Request, res: Response) => {
     const paylukCustomerId = await ensurePaylukCustomer(req);
     console.log('🔍 paylukCustomerId:', paylukCustomerId);
 
-    const callbackUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/payments/complete`;
+    // const callbackUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/payments/complete`;
 
     // Create the escrow — returns a paymentToken for the Inline Checkout widget
-    const escrowResult = await createEscrow({
-      amount: totalAmount,
-      purpose: `Order ${newOrder.orderNumber}`,
-      description: orderItems.map(i => `${i.name} x${i.quantity}`).join(', '),
-      whoPays: 'buyer',
-      totalQuantity: orderItems.reduce((sum, i) => sum + i.quantity, 0),
-      callbackUrl,
-      customerId: paylukCustomerId,
-    });
+    // const escrowResult = await createEscrow({
+    //   amount: totalAmount,
+    //   purpose: `Order ${newOrder.orderNumber}`,
+    //   description: orderItems.map(i => `${i.name} x${i.quantity}`).join(', '),
+    //   whoPays: 'buyer',
+    //   totalQuantity: orderItems.reduce((sum, i) => sum + i.quantity, 0),
+    //   callbackUrl,
+    //   customerId: paylukCustomerId,
+    // });
 
     // ✅ Card payment is triggered client-side via the Payluk Inline Checkout widget.
     // We do NOT call POST /payment/escrow here — that endpoint is for wallet payments only.
     newOrder.payment = {
       provider: 'payluk',
-      transactionRef: escrowResult.paymentToken,
-      details: { escrowResult: escrowResult.raw }
+      // transactionRef: escrowResult.paymentToken,
+      // details: { escrowResult: escrowResult.raw }
     } as any;
     await newOrder.save();
 
@@ -149,8 +149,8 @@ export const createOrderFromCart = async (req: Request, res: Response) => {
       message: 'Order created. Complete payment with Payluk.',
       order: newOrder,
       payluk: {
-        paymentToken: escrowResult.paymentToken,  // frontend passes this to widget
-        escrowId: escrowResult.escrowId,
+        // paymentToken: escrowResult.paymentToken,  // frontend passes this to widget
+        // escrowId: escrowResult.escrowId,
         customerId: paylukCustomerId,
       }
     });

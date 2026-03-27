@@ -10,12 +10,57 @@ import { Comment } from '@/models/comment-model';
 import { User } from '@/models/user-model';
 import { Wishlist } from '@/models/wishlist-model';
 import { PRODUCT_CATEGORIES } from '@/constants/categories.constant';
+import {createPaymentLink, PaylukError} from "@/services/payluk.service";
 
 const getAuthUserId = (req: Request): string | null => {
   const user = (req as any).user;
   const id = user?._id || user?.id || user?.userId;
   return id ? id.toString() : null;
 };
+
+async function tryCreateEscrow(opts: {
+  productId:    string;
+  productName:  string;
+  description:  string;
+  price:        number;
+  stock:        number;
+  imageUrl?:    string | null;
+  whoPays:      'buyer' | 'seller' | 'both';
+  maxDelivery:  number;
+  deliveryTimeline: 'hours' | 'days' | 'minutes';
+  paylukCustomerId: string;   // seller's Payluk customer ID stored on Business
+}): Promise<{ escrowId: string; paymentToken: string } | null> {
+  try {
+    const result = await createPaymentLink({
+      amount:           opts.price,
+      purpose:          opts.productName,
+      description:      opts.description,
+      whoPays:          opts.whoPays,
+      maxDelivery:      opts.maxDelivery,
+      deliveryTimeline: opts.deliveryTimeline,
+      totalQuantity:    opts.stock,
+      imageUrl:         opts.imageUrl ?? null,
+      customerId:       opts.paylukCustomerId,
+    });
+
+    // Persist the Payluk identifiers on the product record
+    await Product.findByIdAndUpdate(opts.productId, {
+      paylukEscrowId:     result.escrowId,
+      paylukPaymentToken: result.paymentToken,
+    });
+
+    console.log(`✅ [Payluk] Escrow created for product ${opts.productId}:`, result.escrowId);
+    return { escrowId: result.escrowId, paymentToken: result.paymentToken };
+
+  } catch (err) {
+    const msg = err instanceof PaylukError
+        ? `Payluk ${err.statusCode}: ${err.message}`
+        : String(err);
+
+    console.error(`⚠️  [Payluk] Escrow creation failed for product ${opts.productId} — ${msg}`);
+    return null;
+  }
+}
 
 // GET UNIFIED FEED
 export const getUnifiedFeed = asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -299,6 +344,27 @@ export const createPost = asyncHandler(async (req: Request, res: Response): Prom
       });
       finalProductId = newProduct._id;
 
+      const user = await User.findById(userId).select('paylukCustomerId');
+
+
+      if (user?.paylukCustomerId) {
+        await tryCreateEscrow({
+          productId:        newProduct._id.toString(),
+          productName:      req.body.productName,
+          description:      req.body.description,
+          price:            req.body.price,
+          stock:            req.body.stock,
+          imageUrl:         req.body.media?.[0] ?? null,
+          whoPays:          req.body.whoPays        || 'seller',
+          maxDelivery:      req.body.maxDelivery    ?? 3,
+          deliveryTimeline: req.body.deliveryTimeline || 'days',
+          paylukCustomerId: user.paylukCustomerId,
+        });
+      } else {
+        console.warn(`⚠️ [Payluk] Business ${business._id} has no paylukCustomerId — escrow skipped.`);
+      }
+
+
       // 🚨 Log Product Inventory Addition
       await trackEvent({
           targetId: userId,
@@ -473,7 +539,7 @@ export const getMyProducts = asyncHandler(async (req: Request, res: Response): P
   res.json({ success: true, products });
 });
 
-export const getProductCategories = (req: Request, res: Response) => {
+export const getProductCategories = (_req: Request, res: Response) => {
   res.status(200).json({
     success: true,
     data: PRODUCT_CATEGORIES

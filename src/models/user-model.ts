@@ -69,7 +69,7 @@ const userSchema = new Schema<IUser>(
     businesses: [{ type: Schema.Types.ObjectId, ref: 'Business' }],
       phone: { type: String, trim: true },
       bvn: { type: String, select: false },
-      paylukCustomerId: { type: String, sparse: true }
+      paylukCustomerId: { type: String, sparse: true, select: false },
   },
   { timestamps: true }
 ); // Automatically adds createdAt and updatedAt

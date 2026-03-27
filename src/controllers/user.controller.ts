@@ -7,6 +7,7 @@ import { Business } from '@/models/business-model';
 import { trackEvent } from '@/services/track-event.service'; // Updated import
 import mongoose, { Types } from "mongoose";
 import { Product } from '@/models/product-model';
+import {createPaylukCustomer} from "@/services/payluk.service";
 
 interface IBusinessDoc {
   _id: Types.ObjectId;
@@ -145,9 +146,36 @@ export const convertToBusiness = asyncHandler(async (req: Request, res: Response
   const userId = getAuthUserId(req);
   if (!userId) throw new AuthenticationError('User not authenticated');
 
+  // bvn is required — must be submitted from the client at conversion time
+  const { bvn } = req.body;
+  if (!bvn) {
+    res.status(400).json({ success: false, message: "BVN is required to upgrade to a business account." });
+    return;
+  }
+
   const user = await User.findById(userId);
   if (!user || user.isBusinessOwner) {
     res.status(400).json({ success: false, message: "Invalid request or already a business." });
+    return;
+  }
+
+  // 1️⃣ Create Payluk customer FIRST — bail early if it fails
+  let paylukCustomerId: string;
+  try {
+    // TODO: revisit here to correct the data passed to the function
+    const paylukCustomer = await createPaylukCustomer({
+      firstName: user.firstName,
+      lastName:  user.lastName,
+      email:     user.email,
+      phone:     user.phone || req.body.phone,
+      bvn,
+    });
+    paylukCustomerId = paylukCustomer.customerId;
+  } catch (err: any) {
+    res.status(502).json({
+      success: false,
+      message: `Failed to register with payment provider: ${err.message}`,
+    });
     return;
   }
 
@@ -157,7 +185,7 @@ export const convertToBusiness = asyncHandler(async (req: Request, res: Response
   try {
     if (session) session.startTransaction();
 
-    await User.findByIdAndUpdate(userId, { isBusinessOwner: true }, { session });
+    await User.findByIdAndUpdate(userId, { isBusinessOwner: true,paylukCustomerId }, { session });
 
     const businessData = {
       owner: userId,
@@ -184,11 +212,13 @@ export const convertToBusiness = asyncHandler(async (req: Request, res: Response
         targetModel: 'User',
         type: 'BOTH',
         notificationData: {
-            type: 'SYSTEM',
+            type: "BUSINESS",
             title: 'Welcome Business Owner!',
             message: 'Your account has been upgraded. Start setting up your business profile.',
-            sender: userId, // System-style notification, can be self-sent or a system ID
-            senderModel: 'User'
+            sender: userId,
+            senderModel: 'User',
+          relatedId: newBusiness._id.toString(),
+          modelType: 'Order'
         },
         activityData: {
             action: 'BUSINESS_CONVERSION',

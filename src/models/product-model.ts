@@ -13,6 +13,10 @@ export interface IProduct extends Document {
     // Added to Interface for consistency
     averageRating: number;
     totalReviews: number;
+
+// ── Payluk Escrow ──────────────────────────────
+    paylukEscrowId:     string | null;
+    paylukPaymentToken: string | null;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -41,6 +45,10 @@ export const productSchema = new Schema<IProduct>(
             type: Number,
             default: 0,
         },
+
+        // PAYLUK FIELDS
+        paylukEscrowId:     { type: String, default: null },
+        paylukPaymentToken: { type: String, default: null },
     },
     { timestamps: true }
 );
