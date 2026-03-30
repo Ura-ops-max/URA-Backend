@@ -3,7 +3,7 @@ name: Deploy to EC2
 
 on:
   push:
-    branches: [dracer/base]
+    branches: [main, dracer/base]
 
 jobs:
   deploy:
@@ -20,6 +20,8 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
             cd /home/ubuntu/ura-v2_backend
             git pull origin dracer/base
             npm install --omit=dev
