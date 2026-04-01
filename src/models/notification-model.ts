@@ -1,5 +1,5 @@
 // models/notification-model.ts
-import { Schema, model, Types } from 'mongoose';
+import { Schema, model } from 'mongoose';
 
 // models/notification-model.ts
 const NotificationSchema = new Schema({

@@ -3,8 +3,7 @@ import { Request, Response } from 'express';
 import { Comment } from '@/models/comment-model';
 import { Post } from '@/models/post-model'; 
 import { asyncHandler } from '@/middleware/errorHandler';
-import { trackEvent } from '@/services/track-event.service'; // Updated import
-import { Types } from 'mongoose';
+import { trackEvent } from '@/services/track-event.service';
 
 /**
  * Helper to safely extract user ID from the request

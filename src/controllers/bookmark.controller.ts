@@ -1,8 +1,6 @@
 
 import { Request, Response } from 'express';
 import { User } from '@/models/user-model';
-import { Post } from '../models/post-model';
-import { Business } from '../models/business-model';
 import { asyncHandler } from '@/middleware/errorHandler';
 import { Types } from 'mongoose';
 import { Review } from '@/models/review-model';

@@ -6,7 +6,6 @@ import {
   bioSchema,
   uriSchema,
 } from './common.schemas';
-import { updateBusiness } from '@/controllers/user.controller';
 
 const userProfileFields = {
   firstName: optionalNameSchema.label('First name').messages({

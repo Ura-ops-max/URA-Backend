@@ -4,7 +4,6 @@ import { Review } from '@/models/review-model';
 import { Business } from '@/models/business-model';
 import { Product } from '@/models/product-model';
 import { trackEvent } from '@/services/track-event.service';
-import { Types } from 'mongoose';
 
 const getAuthUserId = (req: Request): string | null => {
   const user = (req as any).user;
@@ -12,15 +11,6 @@ const getAuthUserId = (req: Request): string | null => {
   return id ? id.toString() : null;
 };
 
-const getAuthUser = (req: Request) => {
-  const user = (req as any).user;
-  const userId = user?.id || user?._id || user?.userId;
-
-  if (!userId) {
-    return null;
-  }
-  return { userId, role: user.role };
-};
 /**
  * CREATE REVIEW
  */
@@ -78,29 +68,29 @@ export const createReview = async (req: Request, res: Response) => {
     // 3. Notify the Owner
     if (recipientId) {
       await trackEvent({
-          targetId: recipientId,
-          targetModel: 'User',
-          type: 'NOTIFICATION',
-          notificationData: {
-              type: 'BUSINESS',
-              title: 'New Review Received',
-              message: `left a ${rating}-star review on ${itemName}`,
-              sender: userId,
-              senderModel: 'User',
-              relatedId: (review._id as any).toString(),
-              modelType: reviewedItemModel as any
-          }
+        targetId: recipientId,
+        targetModel: 'User',
+        type: 'NOTIFICATION',
+        notificationData: {
+          type: 'BUSINESS',
+          title: 'New Review Received',
+          message: `left a ${rating}-star review on ${itemName}`,
+          sender: userId,
+          senderModel: 'User',
+          relatedId: (review._id as any).toString(),
+          modelType: reviewedItemModel as any,
+        },
       });
     }
 
-    res.status(201).json({ success: true, data: review });
+
+    return res.status(201).json({ success: true, data: review });
   } catch (error: any) {
     if (error.code === 11000) {
       return res.status(400).json({ success: false, message: "You have already reviewed this item." });
     }
-    res.status(500).json({ success: false, message: error.message });
-  }
-};
+    return res.status(500).json({ success: false, message: error.message });
+  }}
 
 
 /**
@@ -130,25 +120,24 @@ export const getItemReviews = async (req: Request, res: Response) => {
 /**
  * @desc    Toggle Like on a review (Atomic)
  */
-export const toggleLikeReview = (async (req: Request, res: Response) => {
+export const toggleLikeReview = async (req: Request, res: Response) => {
   const { id } = req.params;
   const user = (req as any).user;
   const userId = user?.id || user?._id || user?.userId;
+
   if (!userId) {
     return res.status(401).json({ success: false, message: "Authentication required" });
   }
+
   const review = await Review.findById(id);
   if (!review) return res.status(400).json({ success: false, message: 'Review not found' });
-
 
   const hasLiked = review.likes.includes(userId);
   const hasDisliked = review.dislikes.includes(userId);
 
   if (hasLiked) {
-    // If already liked, unlike it
     review.likes = review.likes.filter((uid) => uid.toString() !== userId);
   } else {
-    // Like it and ensure it's removed from dislikes
     review.likes.push(userId);
     if (hasDisliked) {
       review.dislikes = review.dislikes.filter((uid) => uid.toString() !== userId);
@@ -156,14 +145,13 @@ export const toggleLikeReview = (async (req: Request, res: Response) => {
   }
 
   await review.save();
-  res.status(200).json({ status: 'success', data: review });
-});
-
+  return res.status(200).json({ status: 'success', data: review });
+};
 
 /**
  * @desc    Toggle Dislike on a review
  */
-export const toggleDislikeReview = (async (req: Request, res: Response) => {
+export const toggleDislikeReview = async (req: Request, res: Response) => {
   const { id } = req.params;
   const user = (req as any).user;
   const userId = user?.id || user?._id || user?.userId;
@@ -188,44 +176,45 @@ export const toggleDislikeReview = (async (req: Request, res: Response) => {
   }
 
   await review.save();
-  res.status(200).json({ status: 'success', data: review });
-});
+  return res.status(200).json({ status: 'success', data: review });
+};
 
 /**
  * @desc    Update Review (Only Owner)
  */
-export const updateReview = (async (req: Request, res: Response) => {
+export const updateReview = async (req: Request, res: Response) => {
   const user = (req as any).user;
   const userId = user?.id || user?._id || user?.userId;
 
   if (!userId) {
     return res.status(401).json({ success: false, message: "Authentication required" });
   }
+
   const review = await Review.findOneAndUpdate(
-    { _id: req.params.id, user: userId },
-    { rating: req.body.rating, comment: req.body.comment },
-    { new: true, runValidators: true }
+      { _id: req.params.id, user: userId },
+      { rating: req.body.rating, comment: req.body.comment },
+      { new: true, runValidators: true }
   );
 
   if (!review) return res.status(400).json({ success: false, message: 'Review not found' });
 
-  res.status(200).json({ status: 'success', data: review });
-});
+  return res.status(200).json({ status: 'success', data: review });
+};
 
 /**
  * @desc    Delete Review
  */
-export const deleteReview = (async (req: Request, res: Response) => {
+export const deleteReview = async (req: Request, res: Response) => {
   const user = (req as any).user;
   const userId = user?.id || user?._id || user?.userId;
 
   if (!userId) {
     return res.status(401).json({ success: false, message: "Authentication required" });
   }
+
   const review = await Review.findOneAndDelete({ _id: req.params.id, user: userId });
 
   if (!review) return res.status(400).json({ success: false, message: 'Review not found' });
 
-
-  res.status(204).json({ status: 'success', data: null });
-});
+  return res.status(204).json({ status: 'success', data: null });
+};

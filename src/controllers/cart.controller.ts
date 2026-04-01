@@ -19,25 +19,25 @@ export const getCart = async (req: Request, res: Response) => {
     });
 
     if (!cart) {
-      return res.status(200).json({ user: userId, items: [], totalItems: 0, totalPrice: 0 });
+       res.status(200).json({ user: userId, items: [], totalItems: 0, totalPrice: 0 });
     }
 
-    res.status(200).json(cart);
+     res.status(200).json(cart);
   } catch (error) {
     res.status(500).json({ message: "Error fetching cart", error });
   }
 };
 
 // 2. ADD TO CART
-export const addToCart = async (req: Request, res: Response) => {
+export const addToCart = async (req: Request, res: Response): Promise<void> => {
   try {
     const { productId, quantity } = req.body;
     const userId = getAuthUserId(req);
 
     const product = await Product.findById(productId);
-    if (!product) return res.status(404).json({ message: "Product not found" });
-    if (product.stock <= 0) return res.status(400).json({ message: "Out of stock" });
-    if (product.stock < quantity) return res.status(400).json({ message: `Only ${product.stock} left` });
+    if (!product) { res.status(404).json({ message: "Product not found" }); return; }
+    if (product.stock <= 0) { res.status(400).json({ message: "Out of stock" }); return; }
+    if (product.stock < quantity) { res.status(400).json({ message: `Only ${product.stock} left` }); return; }
 
     let cart = await Cart.findOne({ user: userId });
     if (!cart) cart = new Cart({ user: userId, items: [] });
@@ -46,14 +46,13 @@ export const addToCart = async (req: Request, res: Response) => {
 
     if (itemIndex > -1) {
       const newQty = cart.items[itemIndex].quantity + quantity;
-      if (newQty > product.stock) return res.status(400).json({ message: "Exceeds available stock" });
+      if (newQty > product.stock) { res.status(400).json({ message: "Exceeds available stock" }); return; }
       cart.items[itemIndex].quantity = newQty;
     } else {
       cart.items.push({ product: productId, quantity, addedAt: new Date() });
     }
 
     await cart.save();
-    // Return populated so frontend gets updated totals immediately
     const updatedCart = await Cart.findById(cart._id).populate({
       path: 'items.product',
       select: 'name price media stock business'
@@ -63,22 +62,22 @@ export const addToCart = async (req: Request, res: Response) => {
     res.status(500).json({ message: "Error adding to cart", error });
   }
 };
-
 // 3. UPDATE QUANTITY (INC/DEC)
-export const updateCartQuantity = async (req: Request, res: Response) => {
+export const updateCartQuantity = async (req: Request, res: Response): Promise<void> => {
   try {
     const { productId, quantity } = req.body;
     const userId = getAuthUserId(req);
 
     const product = await Product.findById(productId);
     if (product && product.stock < quantity) {
-      return res.status(400).json({ message: "Requested quantity exceeds stock" });
+      res.status(400).json({ message: "Requested quantity exceeds stock" });
+      return;
     }
 
     const cart = await Cart.findOneAndUpdate(
-      { user: userId, "items.product": productId },
-      { $set: { "items.$.quantity": quantity } },
-      { new: true }
+        { user: userId, "items.product": productId },
+        { $set: { "items.$.quantity": quantity } },
+        { new: true }
     ).populate({
       path: 'items.product',
       select: 'name price media stock business'

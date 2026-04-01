@@ -1,5 +1,5 @@
 // models/SearchHistory.ts
-import { Schema, model, Types } from 'mongoose';
+import { Schema, model } from 'mongoose';
 
 const searchHistorySchema = new Schema({
   userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },

@@ -1,9 +1,10 @@
 import { Request, Response } from 'express';
-import Order from '@/models/order-model';
+import Order, {OrderStatus} from '@/models/order-model';
 import Cart from '@/models/cart-model';
 import { User } from '@/models/user-model';
 import { trackEvent } from '@/services/track-event.service';
 import { createPaylukCustomer } from '@/services/payluk.service';
+import {Product} from "@/models/product-model";
 
 const getAuthUserId = (req: Request): string | null => {
   const user = (req as any).user;
@@ -187,7 +188,7 @@ export const confirmOrderPayment = async (req: Request, res: Response) => {
 
     // Mark as paid
     order.paymentStatus = 'paid';
-    order.status = 'processing';
+    order.status = OrderStatus.PROCESSING;
     order.paidAt = new Date();
     order.payment = {
       provider: 'payluk',

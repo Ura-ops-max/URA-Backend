@@ -140,25 +140,22 @@ export const globalSearch = async (req: Request, res: Response) => {
 
 
 
-
 export const saveToHistory = async (req: Request, res: Response) => {
     try {
-        const { query } = req.body; // e.g., "Nike Shoes"
+        const { query } = req.body;
         if (!query || query.length < 2) return res.sendStatus(400);
 
-        // Update if exists (to bring to top) or create new
         await SearchHistory.findOneAndUpdate(
             { userId: getAuthUserId(req), query: query.trim() },
             { createdAt: Date.now() },
             { upsert: true, new: true }
         );
 
-        res.status(200).json({ success: true });
+        return res.status(200).json({ success: true });
     } catch (error) {
-        res.status(500).json({ success: false });
+        return res.status(500).json({ success: false }); // add return
     }
 };
-
 
 // Add to controllers/search.controller.ts
 export const getRecentSearches = async (req: Request, res: Response) => {

@@ -5,13 +5,10 @@ import { asyncHandler } from '@/middleware/errorHandler';
 import { HTTP_STATUS } from '@/constants';
 import { Business } from '@/models/business-model';
 import { trackEvent } from '@/services/track-event.service'; // Updated import
-import mongoose, { Types } from "mongoose";
+import mongoose from "mongoose";
 import { Product } from '@/models/product-model';
 import {createPaylukCustomer} from "@/services/payluk.service";
 
-interface IBusinessDoc {
-  _id: Types.ObjectId;
-}
 
 const getAuthUserId = (req: Request): string | null => {
   const user = (req as any).user;
@@ -411,8 +408,6 @@ export const getWishlistProducts = asyncHandler(async (req: Request, res: Respon
     .limit(limit)
     .populate('business', '_id businessName businessLogo isVerified')
     .lean();
-
-  const total = await Product.countDocuments({ likes: userId });
 
   const formattedProducts = products.map((product: any) => ({
     ...product,

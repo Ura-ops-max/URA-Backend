@@ -27,7 +27,8 @@ const getAuthUser = (req: Request) => {
 
 // 1. Toggle Like (Post/Product)
 export const toggleLike = asyncHandler(async (req: Request, res: Response): Promise<void> => {
-  const { targetType, targetId } = req.params;
+    const targetType = req.params.targetType as string;
+    const targetId = req.params.targetId as string;
   const userId = getAuthUserId(req);
   if (!userId) { res.status(401).json({ message: "User not authenticated" }); return; }
 
@@ -95,7 +96,7 @@ export const toggleLike = asyncHandler(async (req: Request, res: Response): Prom
 
 // 2. Toggle Bookmark
 export const toggleBookmark = asyncHandler(async (req: Request, res: Response): Promise<void> => {
-  const { targetId } = req.params;
+    const targetId = req.params.targetId as string;
   const { targetType } = req.body; // 'Post' or 'Business'
   const userId = getAuthUserId(req)!;
 
@@ -151,7 +152,7 @@ export const toggleBookmark = asyncHandler(async (req: Request, res: Response): 
 
 // 3. Toggle Follow
 export const toggleFollow = asyncHandler(async (req: Request, res: Response): Promise<void> => {
-  const { targetId } = req.params;
+    const targetId = req.params.targetId as string;
   const { isBusiness } = req.body;
   const userId = getAuthUserId(req)!;
 
@@ -180,17 +181,19 @@ export const toggleFollow = asyncHandler(async (req: Request, res: Response): Pr
     await (TargetModel as any).findByIdAndUpdate(targetId, { $push: { followers: userId } });
 
     // Notify the recipient
-    await trackEvent({
-        targetId: targetId,
-        targetModel: isBusiness ? 'Business' : 'User',
-        type: 'NOTIFICATION',
-        notificationData: {
-            type: 'SOCIAL',
-            title: 'New Follower',
-            message: `${user?.firstName} started following you.`,
-            sender: userId,
-            senderModel: 'User'
-        }
+      await trackEvent({
+          targetId: targetId,
+          targetModel: isBusiness ? 'Business' : 'User',
+          type: 'NOTIFICATION',
+          notificationData: {
+              type: 'SOCIAL',
+              title: 'New Follower',
+              message: `${user?.firstName} started following you.`,
+              sender: userId,
+              senderModel: 'User',
+              relatedId: userId,      // the follower's ID
+              modelType: 'User'
+          }
     });
 
     await trackEvent({
@@ -206,7 +209,7 @@ export const toggleFollow = asyncHandler(async (req: Request, res: Response): Pr
 
 // 4. Toggle Wishlist
 export const toggleWishlist = asyncHandler(async (req: Request, res: Response): Promise<void> => {
-  const { productId } = req.params;
+    const productId = req.params.productId as string;
   const userId = getAuthUserId(req)!;
   const product = await Product.findById(productId);
   if (!product) { res.status(404).json({ message: "Product not found" }); return; }

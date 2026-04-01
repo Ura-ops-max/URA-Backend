@@ -2,7 +2,6 @@ import { Request, Response } from 'express';
 import { Notification } from '@/models/notification-model';
 import { Business } from '@/models/business-model';
 import { asyncHandler } from '@/middleware/errorHandler';
-import { Types } from 'mongoose';
 import { Activity } from '@/models/activity-model';
 
 /**
