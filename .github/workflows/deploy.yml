@@ -23,7 +23,9 @@ jobs:
             export NVM_DIR="$HOME/.nvm"
             [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
             cd $HOME/ura-v2_backend
+            git stash
             git pull origin dracer/base
+            rm -rf node_modules package-lock.json
             npm install
             npm run build
             npm prune --omit=dev
