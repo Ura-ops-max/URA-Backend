@@ -24,6 +24,6 @@ jobs:
             [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
             cd $HOME/ura-v2_backend
             git pull origin dracer/base
-            npm install
+            npm install --legacy-peer-deps
             npm run build
             pm2 restart ura-dev-api || pm2 start ecosystem.config.js
