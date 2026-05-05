@@ -22,8 +22,9 @@ jobs:
           script: |
             export NVM_DIR="$HOME/.nvm"
             [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-            cd /home/ubuntu/ura-v2_backend
+            cd $HOME/ura-v2_backend
             git pull origin dracer/base
-            npm install --omit=dev
+            npm install
             npm run build
+            npm prune --omit=dev
             pm2 restart ura-dev-api || pm2 start ecosystem.config.js
