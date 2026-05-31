@@ -17,7 +17,7 @@ export const globalSearch = async (req: Request, res: Response) => {
     try {
         // FIX 1: Merge req.query and req.body so the backend catches the category 
         // sent by your frontend's POST request
-        const params = { ...req.query, ...req.body };
+        const params = { ...req.query, ...(req as any).body };
 
         const {
             q,
