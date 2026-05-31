@@ -15,6 +15,10 @@ const getAuthUserId = (req: Request): string | null => {
 
 export const globalSearch = async (req: Request, res: Response) => {
     try {
+        // FIX 1: Merge req.query and req.body so the backend catches the category 
+        // sent by your frontend's POST request
+        const params = { ...req.query, ...req.body };
+
         const {
             q,
             type = 'all',
@@ -25,9 +29,9 @@ export const globalSearch = async (req: Request, res: Response) => {
             tags,
             isBusiness,
             inStock,
-            openNow, // 'true' or 'false'
-            rating   // '1', '2', '3', '4', '5'
-        } = req.query;
+            openNow, 
+            rating   
+        } = params;
 
         const queryStr = String(q || "");
         const regex = { $regex: queryStr, $options: 'i' };
@@ -39,8 +43,11 @@ export const globalSearch = async (req: Request, res: Response) => {
                 $or: [{ businessName: regex }, { about: regex }, { tagline: regex }]
             };
 
-            // RE-ENABLED: Filter businesses by category
-            // if (category) bizQuery.category = category;
+            // FIX 2: This is now uncommented! It forces businesses to match the category.
+            if (category) {
+                bizQuery.category = category;
+            }
+     
 
             if (city) bizQuery['address.city'] = { $regex: city, $options: 'i' };
 
