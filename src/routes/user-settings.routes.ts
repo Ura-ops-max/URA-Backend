@@ -1,13 +1,13 @@
 import { Router } from 'express';
 import * as settingsController from '@/controllers/user-settings.controller';
-import { requireAuth } from '@/middleware/passport-auth'; // Your auth guard
+import { requireAuth } from '@/middleware/passport-auth';
 
 const router = Router();
 
-router.use(requireAuth); // All security routes require login
+router.use(requireAuth);
 
-router.put('/update-password', settingsController.updatePassword);
-router.put('/update-email', settingsController.updateEmail);
+router.put('/password', settingsController.updatePassword);             
+router.put('/email',    settingsController.updateEmail);              
 router.post('/resend-verification', settingsController.resendVerification);
 
 export default router;

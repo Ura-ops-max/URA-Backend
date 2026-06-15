@@ -9,8 +9,9 @@ import {
   verifyEmail,
   googleAuth,
   googleCallback,
-  checkUsernameAvailability
-  
+  checkUsernameAvailability,
+  enable2FA,
+  disable2FA,
 } from '@/controllers/passport-auth.controller';
 import { requireAuth } from '@/middleware/passport-auth';
 
@@ -24,10 +25,12 @@ router.post('/refresh', validateRequest(refreshTokenSchema), refresh);
 router.get('/verify-email', verifyEmail);
 router.get('/check-username',  validateRequest(checkUsernameSchema), checkUsernameAvailability);
 
+// 2FA
+router.post('/2fa/enable', requireAuth, enable2FA);
+router.post('/2fa/disable', requireAuth, disable2FA);
+
 // Google OAuth
 router.get('/google', googleAuth);
 router.get('/google/callback', googleCallback);
-
-// TODO: Add Apple, Facebook, etc.
 
 export default router;

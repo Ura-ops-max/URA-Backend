@@ -124,20 +124,28 @@ passport.use(
             }
             await user.save();
           } else {
-            // Create new user
+            const nameParts  = profile.displayName?.split(' ') ?? [];
+            const firstName  = profile.name?.givenName  || nameParts[0] || 'User';
+            const lastName   = profile.name?.familyName || nameParts.slice(1).join(' ') || '';
+            // Generate a unique username — pre-save hook will also try but may collide
+            const baseUsername = `_${firstName.toLowerCase()}${lastName.toLowerCase()}`;
+            const username = `${baseUsername}${Date.now().toString(36)}`;
+
             user = await User.create({
               googleId: profile.id,
               email: profile.emails?.[0]?.value,
-              firstName: profile.name?.givenName || profile.displayName?.split(' ')[0] || 'User',
-              lastName: profile.name?.familyName || profile.displayName?.split(' ')[1] || '',
+              firstName,
+              lastName,
+              username,
               profilePicture: profile.photos?.[0]?.value,
               emailVerified: true,
             });
           }
         }
 
-        return done(null, user);
+        return done(null, user ?? false);
       } catch (error) {
+        console.error('[Google OAuth strategy]:', error);
         return done(error as Error, undefined);
       }
     }

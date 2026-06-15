@@ -7,7 +7,6 @@ const router = Router();
 
 router.use(requireAuth); // All bookmark routes require login
 
-// router.get('/list', getBookmarkList);
 router.get('/load', getMyBookmarks);
 
 router.post('/toggle/:targetId', toggleBookmark);

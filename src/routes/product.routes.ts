@@ -1,32 +1,37 @@
 import { Router } from 'express';
-import {
-  updateItem,
-  deleteItem,
-  getMyProducts,
-  getProductCategories,
-  getProductDetails
-} from '@/controllers/post.controller';
 import { requireAuth, optionalProtect } from '@/middleware/passport-auth';
+import { validateRequest } from '@/middleware/validation';
+import { createProductSchema, updateProductSchema } from '@/validators/product.validators';
 import { toggleLike, toggleWishlist } from '@/controllers/interaction.controller';
-
+import {
+  createProduct,
+  updateProduct,
+  deleteProduct,
+  getMyProducts,
+  getProductCatalog,
+  getProductCategories,
+  getProductDetails,
+  setupProductEscrow,
+} from '@/controllers/product.controller';
 
 const router = Router();
 
+// Discovery
+router.get('/categories',  getProductCategories);                  // GET  /products/categories
+router.get('/',            optionalProtect, getProductCatalog);    // GET  /products
+router.get('/mine',        requireAuth,     getMyProducts);        // GET  /products/mine
 
-router.get('/product-categories', getProductCategories);
+// Product CRUD
+router.post('/',      requireAuth,     validateRequest(createProductSchema), createProduct);  // POST   /products
+router.get('/:id',    optionalProtect, getProductDetails);                                     // GET    /products/:id
+router.patch('/:id',  requireAuth,     validateRequest(updateProductSchema), updateProduct);   // PATCH  /products/:id
+router.delete('/:id', requireAuth,     deleteProduct);             // DELETE /products/:id
 
-router.get('/:id', optionalProtect, getProductDetails);
+// Escrow setup (retroactive for products created before Payluk was live)
+router.post('/:id/escrow', requireAuth, setupProductEscrow);       // POST /products/:id/escrow
 
-router.patch('/:id', requireAuth, updateItem);
-router.delete('/:id', requireAuth, deleteItem);
-
-// --- PRODUCT INVENTORY ---
-// New: Helps the business owner see their own products to link them to posts
-router.get('/my-products', requireAuth, getMyProducts);
-
-router.patch("/product/toggle/:targetId", requireAuth, toggleWishlist);
-router.post('/likes/targetType/:targetId', requireAuth, toggleLike);
-
-
+// Interactions
+router.patch('/wishlist/:targetId',              requireAuth, toggleWishlist);
+router.patch('/likes/:targetType/:targetId',     requireAuth, toggleLike);
 
 export default router;

@@ -1,23 +1,21 @@
 import { getRandomCoverImage } from '@/utils/fnLib';
 import { Schema, model, Document, Types } from 'mongoose';
 
-// Interface for TypeScript
 export interface IUser extends Document {
   firstName: string;
   lastName: string;
   username: string;
   email: string;
-  password?: string; // Optional for OAuth users
-    phone?: string;
-    bvn?: string;
-    paylukCustomerId?: string;
+  password?: string; 
+  phone: string;
+  paylukCustomerId?: string;
   bio?: string;
   googleId?: string;
   appleId?: string;
   profilePicture?: string;
   coverPicture?: string;
   isBusinessOwner?: boolean;
-  businessName?: string; // Optional business display name
+  businessName?: string; 
   emailVerified?: boolean;
   emailVerificationToken?: string;
   emailVerificationExpires?: Date;
@@ -31,6 +29,11 @@ export interface IUser extends Document {
   followingUsers: Types.ObjectId[];
   followingBusinesses: Types.ObjectId[];
   followers: Types.ObjectId[];
+  shippingAddress?: {
+    phone?: string;
+    city?: string;
+    fullAddress?: string;
+  };
   businesses: Types.ObjectId[];
   createdAt: Date;
   updatedAt: Date;
@@ -39,10 +42,12 @@ export interface IUser extends Document {
 const userSchema = new Schema<IUser>(
   {
     firstName: { type: String, required: true },
-    lastName: { type: String, required: true },
+    lastName: { type: String, required: false, default: '' },
     username: { type: String, required: true, unique: true, trim: true, lowercase: true },
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-    password: { type: String, select: false }, // 'select: false' hides it from default queries
+    phone: { type: String, trim: true, required: false },
+    paylukCustomerId: { type: String, sparse: true, required: false },
+    password: { type: String, select: false },
     googleId: { type: String, sparse: true, unique: true },
     appleId: { type: String, sparse: true, unique: true },
     profilePicture: { type: String },
@@ -66,10 +71,12 @@ const userSchema = new Schema<IUser>(
     followingUsers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     followingBusinesses: [{ type: Schema.Types.ObjectId, ref: 'Business' }],
     followers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+    shippingAddress: {
+      phone: { type: String },
+      city: { type: String },
+      fullAddress: { type: String },
+    },
     businesses: [{ type: Schema.Types.ObjectId, ref: 'Business' }],
-      phone: { type: String, trim: true },
-      bvn: { type: String, select: false },
-      paylukCustomerId: { type: String, sparse: true, select: false },
   },
   { timestamps: true }
 ); // Automatically adds createdAt and updatedAt

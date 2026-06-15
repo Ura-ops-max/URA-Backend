@@ -20,7 +20,8 @@ const getAuthUser = (req: Request) => {
 
 // CREATE COMMENT
 export const createComment = asyncHandler(async (req: Request, res: Response): Promise<void> => {
-  const { content, postId, parentId, mentions } = req.body;
+  const { content, parentId, mentions } = req.body;
+  const postId = req.params.postId || req.body.postId;
   const auth = getAuthUser(req);
 
   if (!auth) {

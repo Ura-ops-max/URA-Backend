@@ -25,7 +25,7 @@ export interface IPaymentDetails {
 
 export interface IOrder extends Document {
   user: mongoose.Types.ObjectId;
-  business: mongoose.Types.ObjectId; // Track which business this order belongs to
+  business: mongoose.Types.ObjectId;
   items: IOrderItem[];
   totalAmount: number;
   shippingAddress: {
@@ -37,9 +37,10 @@ export interface IOrder extends Document {
   paymentStatus: 'pending' | 'paid' | 'failed';
   paymentMethod: 'card' | 'transfer' | 'wallet';
   payment?: IPaymentDetails;
+  paylukPaymentToken?: string; // Stored at checkout; used for confirmation lookup
   paidAt?: Date;
   trackingNumber?: string;
-  orderNumber: string; // Human readable ID like #ORD-12345
+  orderNumber: string;
 }
 
 const OrderSchema: Schema = new Schema({
@@ -76,6 +77,8 @@ const OrderSchema: Schema = new Schema({
     details: Schema.Types.Mixed
   },
 
+  paylukPaymentToken: { type: String, index: true },
+  paylukEscrowId: { type: String, default: null },
   paidAt: Date,
   trackingNumber: { type: String }
 }, { timestamps: true });

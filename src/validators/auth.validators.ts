@@ -6,6 +6,7 @@ import {
   nameSchema,
   usernameSchema,
   requiredStringSchema,
+  phoneSchema,
 } from './common.schemas';
 
 export const authSchemas = {
@@ -15,6 +16,7 @@ export const authSchemas = {
     firstName: nameSchema.label('First name'),
     lastName: nameSchema.label('Last name'),
     username: usernameSchema,
+    phone: phoneSchema, 
   }),
 
   login: createSchema({

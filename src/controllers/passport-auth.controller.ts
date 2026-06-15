@@ -1,6 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import passport from 'passport';
 import bcrypt from 'bcryptjs';
+import speakeasy from 'speakeasy';
+import QRCode from 'qrcode';
+import mongoose, { Types } from 'mongoose';
 import { User } from '@/models/user-model';
 import { AuthenticationError, ValidationError, ErrorDetail } from '@/utils/errors';
 import {
@@ -14,64 +17,76 @@ import { asyncHandler } from '@/middleware/errorHandler';
 import { blacklistToken } from '@/services/token-blacklist.service';
 import { config } from '@/config/env.config';
 import { HTTP_STATUS } from '@/constants';
-import { trackEvent } from '@/services/track-event.service'; // Updated import
-import { Types } from 'mongoose';
+import { trackEvent } from '@/services/track-event.service';
+import { createPaylukCustomer } from '@/services/payluk.service';
 
 /**
  * Register new user (Local)
  */
 export const register = asyncHandler(async (req: Request, res: Response): Promise<void> => {
-  const { firstName, lastName, email, password, username } = req.body;
+  const { firstName, lastName, email, password, username, phone } = req.body;
 
   const exists = await User.findOne({ email });
   if (exists) {
-    const errorDetails: ErrorDetail[] = [
-      {
-        field: 'email',
-        message: 'An account with this email already exists. Please sign in.',
-        location: 'body',
-      },
-    ];
-    throw new ValidationError('Validation failed', errorDetails);
+    throw new ValidationError('Validation failed', [
+      { field: 'email', message: 'An account with this email already exists. Please sign in.', location: 'body' },
+    ] as ErrorDetail[]);
   }
 
   const hashedPassword = password ? await bcrypt.hash(password, 12) : undefined;
   const { token, hash, expires } = generateEmailToken();
 
-  const user = await User.create({
-    firstName,
-    lastName,
-    username,
-    email,
-    password: hashedPassword,
-    emailVerificationToken: hash,
-    emailVerificationExpires: expires,
-  });
+  // Use a MongoDB session so that if the DB write fails after Payluk succeeds
+  // the user record is never persisted (prevents half-saved state).
+  // Conversely, if Payluk throws, the transaction aborts before any DB write.
+  const session = await mongoose.startSession();
+  let user: InstanceType<typeof User>;
 
-  // 🚨 TRACK EVENT: Account Creation
-  await trackEvent({
-      targetId: (user._id as Types.ObjectId).toString(),
-      targetModel: 'User',
-      type: 'ACTIVITY',
-      activityData: {
-          action: 'SIGNUP',
-          description: 'Account created successfully',
-          metadata: {ip: req.ip, userAgent: req.headers['user-agent']}
+  try {
+    await session.withTransaction(async () => {
+      // Create user document inside the transaction
+      const [created] = await User.create(
+        [{ firstName, lastName, username, email, phone, password: hashedPassword,
+           emailVerificationToken: hash, emailVerificationExpires: expires }],
+        { session }
+      );
+      user = created;
+
+      // Create Payluk customer inside the same logical unit.
+      // If this throws the transaction aborts and the user is never saved.
+      if (phone) {
+        const paylukResult = await createPaylukCustomer({ firstName, lastName, email, phone });
+        await User.updateOne(
+          { _id: user._id },
+          { paylukCustomerId: paylukResult.customerId },
+          { session }
+        );
+        user.paylukCustomerId = paylukResult.customerId;
       }
-  });
+    });
+  } finally {
+    await session.endSession();
+  }
 
-  
   res.status(HTTP_STATUS.CREATED).json({
     success: true,
     message: 'Registration successful. Please check your email to verify your account.',
   });
-  
-  try {
-    await sendVerificationEmail(email, token);
-  } catch (emailError) {
-    console.error("Verification email failed to send:", emailError);
-  }
 
+  // Fire-and-forget after response is sent
+  Promise.all([
+    sendVerificationEmail(email, token).catch(e => console.error('Verification email failed:', e)),
+    trackEvent({
+      targetId: (user!._id as Types.ObjectId).toString(),
+      targetModel: 'User',
+      type: 'ACTIVITY',
+      activityData: {
+        action: 'SIGNUP',
+        description: 'Account created successfully',
+        metadata: { ip: req.ip, userAgent: req.headers['user-agent'] },
+      },
+    }).catch(e => console.error('trackEvent failed:', e)),
+  ]);
 });
 
 /**
@@ -107,10 +122,17 @@ export const login = asyncHandler(
       const accessToken = generateAccessToken({ userId: user.id, email: user.email });
       const refreshToken = generateRefreshToken({ userId: user.id, email: user.email });
 
+      const userObj = user.toObject ? user.toObject() : { ...user };
+      delete userObj.password;
+      delete userObj.twoFactorSecret;
+      delete userObj.mfaRecoveryCodes;
+      delete userObj.emailVerificationToken;
+      delete userObj.emailVerificationExpires;
+
       return res.status(200).json({
         success: true,
         message: 'Login successful',
-        data: { accessToken, refreshToken, user }
+        data: { accessToken, refreshToken, user: userObj }
       });
     })(req, res, next);
   }
@@ -129,20 +151,20 @@ export const googleCallback = asyncHandler(
       user.lastLoginAt = new Date();
       await user.save();
 
-      // 🚨 TRACK EVENT: OAuth Login
-      await trackEvent({
-          targetId: user.id.toString(),
-          targetModel: 'User',
-          type: 'ACTIVITY',
-          activityData: {
-              action: 'LOGIN_OAUTH',
-              description: 'User logged in via Google',
-              metadata: {ip: req.ip, userAgent: req.headers['user-agent']}
-          }
-      });
-
       const accessToken = generateAccessToken({ userId: user.id, email: user.email });
       const refreshToken = generateRefreshToken({ userId: user.id, email: user.email });
+
+      // Fire-and-forget — must not block or crash the redirect
+      trackEvent({
+        targetId: user.id.toString(),
+        targetModel: 'User',
+        type: 'ACTIVITY',
+        activityData: {
+          action: 'LOGIN_OAUTH',
+          description: 'User logged in via Google',
+          metadata: { ip: req.ip, userAgent: req.headers['user-agent'] },
+        },
+      }).catch(e => console.error('[googleCallback] trackEvent failed:', e));
 
       res.redirect(
         `${config.frontend.url}/auth/oauth/success?accessToken=${accessToken}&refreshToken=${refreshToken}`
@@ -267,4 +289,33 @@ export const refresh = asyncHandler(async (req: Request, res: Response): Promise
 export const googleAuth = passport.authenticate('google', {
   scope: ['profile', 'email'],
   session: false,
+});
+
+export const enable2FA = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const user = (req as any).user;
+  if (!user) throw new AuthenticationError('User not authenticated');
+
+  const secret = speakeasy.generateSecret({ name: `URA (${user.email})` });
+  const qrDataURL = await QRCode.toDataURL(secret.otpauth_url as string);
+
+  user.twoFactorSecret = secret.base32;
+  user.twoFactorEnabled = true;
+  await user.save();
+
+  res.status(HTTP_STATUS.OK).json({
+    success: true,
+    message: '2FA enabled successfully',
+    data: { qrDataURL, secret: secret.base32 },
+  });
+});
+
+export const disable2FA = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const user = (req as any).user;
+  if (!user) throw new AuthenticationError('User not authenticated');
+
+  user.twoFactorEnabled = false;
+  user.twoFactorSecret = undefined as unknown as string;
+  await user.save();
+
+  res.status(HTTP_STATUS.OK).json({ success: true, message: '2FA disabled successfully' });
 });

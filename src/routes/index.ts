@@ -13,23 +13,25 @@ import cartRoutes from '@/routes/cart.routes';
 import settingsRoutes from '@/routes/user-settings.routes';
 import reviewsRoutes from '@/routes/reviews.routes';
 import uploadRoutes from '@/routes/upload.routes';
-import webhookRouter from "@/routes/webhook.route"
+import webhookRouter from '@/routes/webhook.route';
+import onboardingRoutes from '@/routes/onboarding.routes';
 
 const router = Router();
 
 router.use('/auth', authRoutes);
-router.use('/chat', chatRoutes);
-router.use('/user', userRoutes);
-router.use('/log', logRoutes);
-router.use('/bookmark', bookmarkRoutes);
-router.use('/post', postRouted);
-router.use('/product', productRoutes);
+router.use('/conversations', chatRoutes);
+router.use('/users', userRoutes);
+router.use('/logs', logRoutes);
+router.use('/bookmarks', bookmarkRoutes);
+router.use('/posts', postRouted);
+router.use('/products', productRoutes);
 router.use('/search', searchRoutes);
-router.use('/order', orderRoutes);
+router.use('/orders', orderRoutes);
 router.use('/cart', cartRoutes);
 router.use('/settings', settingsRoutes);
 router.use('/reviews', reviewsRoutes);
 router.use('/upload', uploadRoutes);
 router.use('/webhooks', webhookRouter);
+router.use('/onboarding', onboardingRoutes);
 
 export default router;

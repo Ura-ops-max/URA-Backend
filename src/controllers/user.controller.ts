@@ -4,11 +4,10 @@ import { AuthenticationError, NotFoundError } from '@/utils/errors';
 import { asyncHandler } from '@/middleware/errorHandler';
 import { HTTP_STATUS } from '@/constants';
 import { Business } from '@/models/business-model';
-import { trackEvent } from '@/services/track-event.service'; // Updated import
-import mongoose from "mongoose";
+import { trackEvent } from '@/services/track-event.service';
+import { Post }  from '@/models/post-model';
 import { Product } from '@/models/product-model';
-import {createPaylukCustomer} from "@/services/payluk.service";
-
+import * as userService from '@/services/user.service';
 
 const getAuthUserId = (req: Request): string | null => {
   const user = (req as any).user;
@@ -30,8 +29,6 @@ export const getCurrentUser = asyncHandler(async (req: Request, res: Response): 
   if (!user) {
     throw new AuthenticationError('User not found');
   }
-
-  const { Post } = await import('@/models/post-model');
 
   const [posts, businesses] = await Promise.all([
     Post.find({ author: userId })
@@ -63,36 +60,7 @@ export const getCurrentUser = asyncHandler(async (req: Request, res: Response): 
 export const updateProfile = asyncHandler(async (req: Request, res: Response): Promise<void> => {
   const userId = getAuthUserId(req);
   if (!userId) throw new AuthenticationError('User not authenticated');
-
-  const { firstName, lastName, bio, profilePicture, coverPicture } = req.body;
-
-  const updateData: any = {};
-  if (firstName) updateData.firstName = firstName;
-  if (lastName) updateData.lastName = lastName;
-  if (bio) updateData.bio = bio;
-  if (profilePicture) updateData.profilePicture = profilePicture;
-  if (coverPicture) updateData.coverPicture = coverPicture;
-
-  const user = await User.findByIdAndUpdate(
-    userId,
-    { $set: updateData },
-    { new: true, runValidators: true }
-  );
-
-  if (!user) throw new NotFoundError('User not found');
-
-  // 🚨 TRACK EVENT: Profile Update
-  await trackEvent({
-      targetId: userId,
-      targetModel: 'User',
-      type: 'ACTIVITY',
-      activityData: {
-          action: 'PROFILE_UPDATE',
-          description: 'You updated your profile information',
-          metadata: {ip: req.ip, userAgent: req.headers['user-agent']}
-      }
-  });
-
+  const user = await userService.updateUserProfile(userId, req.body);
   res.status(200).json({ success: true, user });
 });
 
@@ -143,93 +111,11 @@ export const convertToBusiness = asyncHandler(async (req: Request, res: Response
   const userId = getAuthUserId(req);
   if (!userId) throw new AuthenticationError('User not authenticated');
 
-  // bvn is required — must be submitted from the client at conversion time
-  const { bvn } = req.body;
-  if (!bvn) {
-    res.status(400).json({ success: false, message: "BVN is required to upgrade to a business account." });
-    return;
-  }
-
-  const user = await User.findById(userId);
-  if (!user || user.isBusinessOwner) {
-    res.status(400).json({ success: false, message: "Invalid request or already a business." });
-    return;
-  }
-
-  // 1️⃣ Create Payluk customer FIRST — bail early if it fails
-  let paylukCustomerId: string;
   try {
-    // TODO: revisit here to correct the data passed to the function
-    const paylukCustomer = await createPaylukCustomer({
-      firstName: user.firstName,
-      lastName:  user.lastName,
-      email:     user.email,
-      phone:     user.phone || req.body.phone,
-      bvn,
-    });
-    paylukCustomerId = paylukCustomer.customerId;
-  } catch (err: any) {
-    res.status(502).json({
-      success: false,
-      message: `Failed to register with payment provider: ${err.message}`,
-    });
-    return;
-  }
-
-  const useTx = process.env.USE_TRANSACTIONS === 'true';
-  const session = useTx ? await mongoose.startSession() : null;
-
-  try {
-    if (session) session.startTransaction();
-
-    await User.findByIdAndUpdate(userId, { isBusinessOwner: true,paylukCustomerId }, { session });
-
-    const businessData = {
-      owner: userId,
-      businessName: `${user.firstName}'s Business`,
-      about: "Update your business description here.",
-      category: "Other",
-      contact: { email: user.email },
-      location: { type: "Point", coordinates: [0, 0] }
-    };
-
-    let newBusiness;
-    if (session) {
-      const result = await Business.create([businessData], { session });
-      newBusiness = result[0];
-    } else {
-      newBusiness = await Business.create(businessData);
-    }
-
-    if (session) await session.commitTransaction();
-
-    // 🚨 TRACK EVENT: Upgrade to Business
-    await trackEvent({
-        targetId: userId,
-        targetModel: 'User',
-        type: 'BOTH',
-        notificationData: {
-            type: "BUSINESS",
-            title: 'Welcome Business Owner!',
-            message: 'Your account has been upgraded. Start setting up your business profile.',
-            sender: userId,
-            senderModel: 'User',
-          relatedId: newBusiness._id.toString(),
-          modelType: 'Order'
-        },
-        activityData: {
-            action: 'BUSINESS_CONVERSION',
-            description: `You converted your account to a business: ${newBusiness.businessName}`,
-        }
-    });
-
-    res.status(200).json({ success: true, message: "Account upgraded successfully." });
-
-  } catch (error) {
-    if (session) await session.abortTransaction();
-    throw error;
-  } finally {
-    if (session) session.endSession();
+    await userService.convertUserToBusiness(userId);
+    res.status(200).json({ success: true, message: 'Account upgraded successfully.' });
+  } catch (error: any) {
+    res.status(error.status || 500).json({ success: false, code: error.code, message: error.message });
   }
 });
 
@@ -389,6 +275,13 @@ export const getFollowList = asyncHandler(async (req: Request, res: Response): P
   });
 
   res.json({ success: true, users: formattedList });
+});
+
+export const updateShippingAddress = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const userId = getAuthUserId(req);
+  if (!userId) throw new AuthenticationError('User not authenticated');
+  const shippingAddress = await userService.updateShippingAddress(userId, req.body);
+  res.status(200).json({ success: true, shippingAddress });
 });
 
 export const getWishlistProducts = asyncHandler(async (req: Request, res: Response): Promise<void> => {

@@ -1,16 +1,15 @@
 import { Schema, model, Document, Types } from 'mongoose';
 
 export interface IProduct extends Document {
-    business: Types.ObjectId; // Always a Business
+    business: Types.ObjectId;
     name: string;
     category: string;
     description: string;
     price: number;
     stock: number;
     size?: string;
-    media: string[]; // Master images
+    media: string[];
     likes: Types.ObjectId[];
-    // Added to Interface for consistency
     averageRating: number;
     totalReviews: number;
 

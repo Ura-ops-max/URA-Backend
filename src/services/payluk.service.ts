@@ -103,17 +103,12 @@ function extractData<T>(raw: unknown): T {
     return ((raw as any)?.data ?? raw) as T;
 }
 
-// ─────────────────────────────────────────────────────────────
-// TYPES
-// ─────────────────────────────────────────────────────────────
-
 // ---------- Customer ----------
 export type CreateCustomerOpts = {
     firstName: string;
     lastName:  string;
     email:     string;
-    phone:     string;
-    bvn:       string;
+    phone?:    string;
 };
 
 export type CreateCustomerResult = {
@@ -152,6 +147,8 @@ export type CreatePaymentLinkResult = {
     escrowId:     string;
     paymentToken: string;
     paymentUrl?:  string;
+    fee:          number;
+    payableAmount: number; // amount + fee — what the buyer actually sends
 };
 
 // ---------- Payment ----------
@@ -202,8 +199,7 @@ export const createPaylukCustomer = async (
             firstname: opts.firstName,
             lastname:  opts.lastName,
             email:     opts.email,
-            phone:     opts.phone,
-            bvn:       opts.bvn,
+            ...(opts.phone && { phone: opts.phone }),
         });
 
         const data       = extractData<Record<string, any>>(resp.data);
@@ -228,7 +224,7 @@ export const createPaymentLink = async (
     opts: CreatePaymentLinkOpts,
 ): Promise<CreatePaymentLinkResult> =>
     withRetry(async () => {
-        console.log('🔍 [createEscrow]', { amount: opts.amount, purpose: opts.purpose });
+        console.log('🔍 [createEscrow]:', { amount: opts.amount, purpose: opts.purpose });
 
         const resp = await paylukAxios.post(
             '/v1/escrow/create',
@@ -251,6 +247,8 @@ export const createPaymentLink = async (
         const escrowId     = data?.id     || data?.escrowId    || data?._id;
         const paymentToken = data?.paymentToken || data?.token || data?.payment_token;
         const paymentUrl   = data?.paymentUrl   || data?.url   || data?.payment_url;
+        const fee          = Number(data?.fee ?? data?.escrowFee ?? data?.transactionFee ?? 0);
+        const payableAmount = Number(data?.payableAmount ?? data?.totalAmount ?? data?.amount ?? opts.amount) + (fee && !data?.payableAmount ? fee : 0);
 
         if (!escrowId) {
             throw new PaylukError('Payluk createEscrow did not return an escrowId', 502, resp.data);
@@ -259,7 +257,8 @@ export const createPaymentLink = async (
             throw new PaylukError('Payluk createEscrow did not return a paymentToken', 502, resp.data);
         }
 
-        return { raw: resp.data, escrowId, paymentToken, paymentUrl };
+        console.log('🔍 [createEscrow] fee:', fee, 'payableAmount:', payableAmount, 'raw data keys:', Object.keys(data ?? {}));
+        return { raw: resp.data, escrowId, paymentToken, paymentUrl, fee, payableAmount };
     }, 2, 'createEscrow');
 
 
@@ -280,7 +279,7 @@ export const initEscrowPayment = async (
             reference:       `order_${opts.orderId}_${Date.now()}`,
             gateway:         opts.gateway || 'card',
             transactionType: 'escrow',
-            escrowDetails:   { escrowId: opts.escrowId },
+            escrowDetails:   { escrowId: [opts.escrowId] },
         };
 
         if (opts.gateway === 'card' && opts.cardId) {
