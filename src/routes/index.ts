@@ -15,6 +15,7 @@ import reviewsRoutes from '@/routes/reviews.routes';
 import uploadRoutes from '@/routes/upload.routes';
 import webhookRouter from '@/routes/webhook.route';
 import onboardingRoutes from '@/routes/onboarding.routes';
+import paylukRoutes from '@/routes/payluk.routes';
 
 const router = Router();
 
@@ -33,5 +34,6 @@ router.use('/reviews', reviewsRoutes);
 router.use('/upload', uploadRoutes);
 router.use('/webhooks', webhookRouter);
 router.use('/onboarding', onboardingRoutes);
+router.use('/payluk', paylukRoutes);
 
 export default router;
