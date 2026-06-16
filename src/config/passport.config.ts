@@ -3,6 +3,7 @@ import passport from 'passport';
 import { Strategy as LocalStrategy } from 'passport-local';
 import { Strategy as JWTStrategy, ExtractJwt } from 'passport-jwt';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
+import { Strategy as MicrosoftStrategy } from 'passport-microsoft';
 import bcrypt from 'bcryptjs';
 import { User } from '@/models/user-model';
 import { config } from '@/config/env.config';
@@ -151,6 +152,66 @@ passport.use(
     }
   )
 );
+
+/**
+ * Microsoft OAuth Strategy
+ * Only registered when Microsoft credentials are configured, so the server
+ * still boots cleanly before an Azure AD app registration exists.
+ */
+if (config.oauth?.microsoft?.clientId && config.oauth?.microsoft?.clientSecret) {
+  passport.use(
+    new MicrosoftStrategy(
+      {
+        clientID: config.oauth.microsoft.clientId,
+        clientSecret: config.oauth.microsoft.clientSecret,
+        callbackURL: config.oauth.microsoft.callbackUrl,
+        tenant: config.oauth.microsoft.tenant || 'common',
+        scope: ['user.read'],
+      },
+      async (_accessToken: string, _refreshToken: string, profile: any, done: any) => {
+        try {
+          const email =
+            profile.emails?.[0]?.value || profile._json?.mail || profile._json?.userPrincipalName;
+
+          // Find by Microsoft ID first
+          let user = await User.findOne({ microsoftId: profile.id });
+
+          if (!user && email) {
+            // Link Microsoft account to an existing user with the same email
+            user = await User.findOne({ email: email.toLowerCase() });
+            if (user) {
+              user.microsoftId = profile.id;
+              user.emailVerified = true; // Microsoft emails are verified
+              await user.save();
+            }
+          }
+
+          if (!user) {
+            const nameParts = profile.displayName?.split(' ') ?? [];
+            const firstName = profile.name?.givenName || nameParts[0] || 'User';
+            const lastName = profile.name?.familyName || nameParts.slice(1).join(' ') || '';
+            const baseUsername = `_${firstName.toLowerCase()}${lastName.toLowerCase()}`;
+            const username = `${baseUsername}${Date.now().toString(36)}`;
+
+            user = await User.create({
+              microsoftId: profile.id,
+              email: email?.toLowerCase(),
+              firstName,
+              lastName,
+              username,
+              emailVerified: true,
+            });
+          }
+
+          return done(null, user ?? false);
+        } catch (error) {
+          console.error('[Microsoft OAuth strategy]:', error);
+          return done(error as Error, undefined);
+        }
+      }
+    )
+  );
+}
 
 /**
  * Serialize user (not used with JWT, but required by Passport)

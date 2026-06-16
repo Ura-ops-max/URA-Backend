@@ -9,6 +9,8 @@ import {
   verifyEmail,
   googleAuth,
   googleCallback,
+  microsoftAuth,
+  microsoftCallback,
   checkUsernameAvailability,
   enable2FA,
   disable2FA,
@@ -32,5 +34,9 @@ router.post('/2fa/disable', requireAuth, disable2FA);
 // Google OAuth
 router.get('/google', googleAuth);
 router.get('/google/callback', googleCallback);
+
+// Microsoft OAuth
+router.get('/microsoft', microsoftAuth);
+router.get('/microsoft/callback', microsoftCallback);
 
 export default router;

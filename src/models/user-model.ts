@@ -11,6 +11,7 @@ export interface IUser extends Document {
   paylukCustomerId?: string;
   bio?: string;
   googleId?: string;
+  microsoftId?: string;
   appleId?: string;
   profilePicture?: string;
   coverPicture?: string;
@@ -49,6 +50,7 @@ const userSchema = new Schema<IUser>(
     paylukCustomerId: { type: String, sparse: true, required: false },
     password: { type: String, select: false },
     googleId: { type: String, sparse: true, unique: true },
+    microsoftId: { type: String, sparse: true, unique: true },
     appleId: { type: String, sparse: true, unique: true },
     profilePicture: { type: String },
     bio: { type: String },

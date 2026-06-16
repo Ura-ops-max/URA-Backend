@@ -174,6 +174,49 @@ export const googleCallback = asyncHandler(
 );
 
 /**
+ * Microsoft OAuth - Start
+ */
+export const microsoftAuth = passport.authenticate('microsoft', {
+  prompt: 'select_account',
+  session: false,
+});
+
+/**
+ * Microsoft OAuth - Callback
+ */
+export const microsoftCallback = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    passport.authenticate('microsoft', { session: false }, async (err: Error, user: any) => {
+      if (err || !user) {
+        return res.redirect(`${config.frontend.url}/auth/login?error=oauth_failed`);
+      }
+
+      user.lastLoginAt = new Date();
+      await user.save();
+
+      const accessToken = generateAccessToken({ userId: user.id, email: user.email });
+      const refreshToken = generateRefreshToken({ userId: user.id, email: user.email });
+
+      // Fire-and-forget — must not block or crash the redirect
+      trackEvent({
+        targetId: user.id.toString(),
+        targetModel: 'User',
+        type: 'ACTIVITY',
+        activityData: {
+          action: 'LOGIN_OAUTH',
+          description: 'User logged in via Microsoft',
+          metadata: { ip: req.ip, userAgent: req.headers['user-agent'] },
+        },
+      }).catch(e => console.error('[microsoftCallback] trackEvent failed:', e));
+
+      res.redirect(
+        `${config.frontend.url}/auth/oauth/success?accessToken=${accessToken}&refreshToken=${refreshToken}`
+      );
+    })(req, res, next);
+  }
+);
+
+/**
  * Verify email
  */
 export const verifyEmail = asyncHandler(async (req: Request, res: Response): Promise<void> => {

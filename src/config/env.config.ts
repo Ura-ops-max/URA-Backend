@@ -21,6 +21,12 @@ const envSchema = Joi.object({
   GOOGLE_CALLBACK_URL: Joi.string().uri().default('http://localhost:8000/api/auth/google/callback'),
   FRONTEND_URL: Joi.string().uri().default('http://localhost:5173'),
 
+  // OAuth - Microsoft (optional — login only enabled when all three are set)
+  MICROSOFT_CLIENT_ID: Joi.string().allow('').default(''),
+  MICROSOFT_CLIENT_SECRET: Joi.string().allow('').default(''),
+  MICROSOFT_TENANT: Joi.string().allow('').default('common'),
+  MICROSOFT_CALLBACK_URL: Joi.string().uri().default('http://localhost:8000/api/v1/auth/microsoft/callback'),
+
   // OAuth - Apple
   APPLE_CLIENT_ID: Joi.string().required(),
   APPLE_TEAM_ID: Joi.string().required(),
@@ -93,6 +99,12 @@ export const config = {
       teamId: envVars.APPLE_TEAM_ID,
       keyId: envVars.APPLE_KEY_ID,
       privateKey: envVars.APPLE_PRIVATE_KEY,
+    },
+    microsoft: {
+      clientId: envVars.MICROSOFT_CLIENT_ID,
+      clientSecret: envVars.MICROSOFT_CLIENT_SECRET,
+      tenant: envVars.MICROSOFT_TENANT,
+      callbackUrl: envVars.MICROSOFT_CALLBACK_URL,
     },
   },
 
