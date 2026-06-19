@@ -14,7 +14,10 @@ export const sendVerificationEmail = async (
   email: string,
   verificationToken: string
 ): Promise<void> => {
-  const verificationLink = `${baseUrl}/verify-email?email=${email}&token=${verificationToken}`;
+  // Point at the FRONTEND verify page (config.app.url is the API host, which has
+  // no /verify-email page — that's why the old link 404'd). The frontend page
+  // reads the token and calls the backend to complete verification.
+  const verificationLink = `${config.frontend.url}/auth/verify-email?email=${email}&token=${verificationToken}`;
   try {
     const info = await transporter.sendMail({
       from: `${sender.name} <${sender.email}>`,
