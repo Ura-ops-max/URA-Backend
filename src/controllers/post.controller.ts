@@ -40,14 +40,14 @@ export const getUnifiedFeed = asyncHandler(async (req: Request, res: Response): 
   let query: any = {};
 
   if (targetUserId) {
+    // Profile feed: a specific user's own posts + the posts they've bookmarked.
     const targetUser = await User.findById(targetUserId).select('bookmarkedPosts');
     const ids = [new Types.ObjectId(targetUserId), ...((targetUser?.bookmarkedPosts ?? []) as Types.ObjectId[])];
     query = { author: { $in: ids } };
-  } else if (currentUserId) {
-    const user    = await User.findById(currentUserId);
-    const follows = [...(user?.followingUsers || []), ...(user?.followingBusinesses || [])];
-    query = { author: { $in: [...follows.map(f => new Types.ObjectId(f.toString())), new Types.ObjectId(currentUserId)] } };
   }
+  // Home feed: global/discovery — show everyone's posts (most recent first), not
+  // just accounts you follow. A follow-only feed meant new accounts saw nothing
+  // and their posts were invisible to everyone else. query stays {} = all posts.
 
   const [posts, bookmarkedPostIds] = await Promise.all([
     populateFeed(query, skip, limit),
