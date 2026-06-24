@@ -52,16 +52,25 @@ export const register = asyncHandler(async (req: Request, res: Response): Promis
       );
       user = created;
 
-      // Create Payluk customer inside the same logical unit.
-      // If this throws the transaction aborts and the user is never saved.
+      // Create the Payluk customer, but treat it as best-effort: a Payluk
+      // failure (e.g. "customer already exists under this merchant", or Payluk
+      // being down) must NOT abort the registration. The user is still created
+      // and can link/set up their Payluk profile later via onboarding.
       if (phone) {
-        const paylukResult = await createPaylukCustomer({ firstName, lastName, email, phone });
-        await User.updateOne(
-          { _id: user._id },
-          { paylukCustomerId: paylukResult.customerId },
-          { session }
-        );
-        user.paylukCustomerId = paylukResult.customerId;
+        try {
+          const paylukResult = await createPaylukCustomer({ firstName, lastName, email, phone });
+          await User.updateOne(
+            { _id: user._id },
+            { paylukCustomerId: paylukResult.customerId },
+            { session }
+          );
+          user.paylukCustomerId = paylukResult.customerId;
+        } catch (e) {
+          console.error(
+            '[register] Payluk customer creation failed (continuing without it):',
+            (e as Error).message
+          );
+        }
       }
     });
   } finally {
