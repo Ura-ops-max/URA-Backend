@@ -51,12 +51,9 @@ export async function convertUserToBusiness(userId: string) {
     e.status = 400;
     throw e;
   }
-  if (!user.paylukCustomerId) {
-    const e: any = new Error('Set up your payment profile first');
-    e.code = 'PAYLUK_PROFILE_REQUIRED';
-    e.status = 422;
-    throw e;
-  }
+  // Note: a Payluk profile is NOT required to convert to a business — sellers
+  // can set up their payment profile later. Checkout separately guards that a
+  // seller has a Payluk customer before a buyer can pay.
 
   const useTx = process.env.USE_TRANSACTIONS === 'true';
   const session = useTx ? await mongoose.startSession() : null;
