@@ -8,8 +8,6 @@ import {
   workspaceInvitationTemplate,
 } from './email-templates';
 
-const baseUrl = config.app.url;
-
 export const sendVerificationEmail = async (
   email: string,
   verificationToken: string
@@ -30,8 +28,10 @@ export const sendVerificationEmail = async (
 
     logger.info('Verification email sent successfully', { messageId: info.messageId });
   } catch (error) {
-    logger.error('Error sending verification email', error);
-    throw new Error(`Error sending verification email: ${(error as Error).message}`);
+    // Non-fatal: a failing mail server (e.g. bad SMTP creds / Gmail 535) must not
+    // 500 registration or the resend endpoint. Log it and continue — the user is
+    // still created and can re-request verification once SMTP is fixed.
+    logger.error('Error sending verification email (continuing without sending)', error);
   }
 };
 
