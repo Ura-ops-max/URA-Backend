@@ -95,6 +95,37 @@ export const getSocialPosts = asyncHandler(async (req: Request, res: Response): 
   res.json({ success: true, posts: formatted });
 });
 
+// ─── Single Post (shareable permalink) ───────────────────────────────────────
+
+export const getPostById = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const currentUserId = getAuthUserId(req);
+  const id = String(req.params.id ?? '');
+
+  if (!Types.ObjectId.isValid(id)) {
+    res.status(400).json({ success: false, message: 'Invalid post id' });
+    return;
+  }
+
+  const post = await Post.findById(id)
+    .populate({ path: 'author', select: '_id username firstName lastName profilePicture businessName businessLogo isVerified' })
+    .populate('product')
+    .lean();
+
+  if (!post) {
+    res.status(404).json({ success: false, message: 'Post not found' });
+    return;
+  }
+
+  const bookmarkedPostIds = await getBookmarkedIds(currentUserId);
+  const base    = await buildFeedPost(post, currentUserId, bookmarkedPostIds);
+  const product = (post as any).product;
+
+  res.json({
+    success: true,
+    post: { ...base, media: product ? product.media : (post as any).media, productDetails: product || null },
+  });
+});
+
 // ─── Create (Post or Product-with-Feed-Post) ──────────────────────────────────
 
 export const createPost = asyncHandler(async (req: Request, res: Response): Promise<void> => {
