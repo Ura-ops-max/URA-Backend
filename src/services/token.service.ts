@@ -28,3 +28,15 @@ export const generateEmailToken = (): { token: string; hash: string; expires: Da
   const expires = new Date(Date.now() + 24 * 60 * 60 * 1000);
   return { token, hash, expires };
 };
+
+/**
+ * Short, human-friendly 6-digit verification code (e.g. "418302").
+ * The plain code is emailed to the user; only its hash is stored.
+ * Verified via the same token flow (the endpoint hashes the submitted code).
+ */
+export const generateVerificationCode = (): { code: string; hash: string; expires: Date } => {
+  const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
+  const hash = crypto.createHash('sha256').update(code).digest('hex');
+  const expires = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+  return { code, hash, expires };
+};

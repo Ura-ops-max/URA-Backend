@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { User } from '@/models/user-model';
 import { asyncHandler } from '@/middleware/errorHandler';
-import { generateEmailToken } from '@/services/token.service';
+import { generateVerificationCode } from '@/services/token.service';
 import { sendVerificationEmail } from '@/services/email.service';
 import { ValidationError, AuthenticationError } from '@/utils/errors';
 import { HTTP_STATUS } from '@/constants';
@@ -74,7 +74,7 @@ export const updateEmail = asyncHandler(async (req: Request, res: Response) => {
     const oldEmail = user.email;
 
     // 3. Generate Token & Update Database
-    const { token, hash, expires } = generateEmailToken();
+    const { code: token, hash, expires } = generateVerificationCode();
 
     user.email = newEmail;
     user.emailVerified = false;
@@ -121,7 +121,7 @@ export const resendVerification = asyncHandler(async (req: Request, res: Respons
     if (!user) throw new AuthenticationError('User not found');
     if (user.emailVerified) throw new ValidationError('Email is already verified');
 
-    const { token, hash, expires } = generateEmailToken();
+    const { code: token, hash, expires } = generateVerificationCode();
 
     user.emailVerificationToken = hash;
     user.emailVerificationExpires = expires;

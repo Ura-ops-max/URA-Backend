@@ -10,6 +10,7 @@ import {
   generateAccessToken,
   generateRefreshToken,
   generateEmailToken,
+  generateVerificationCode,
   verifyToken,
 } from '@/services/token.service';
 import { sendVerificationEmail, sendPasswordResetEmail, sendResetSuccessEmail } from '@/services/email.service';
@@ -34,7 +35,8 @@ export const register = asyncHandler(async (req: Request, res: Response): Promis
   }
 
   const hashedPassword = password ? await bcrypt.hash(password, 12) : undefined;
-  const { token, hash, expires } = generateEmailToken();
+  // 6-digit verification code (emailed to the user; only the hash is stored).
+  const { code: token, hash, expires } = generateVerificationCode();
 
   // Use a MongoDB session so that if the DB write fails after Payluk succeeds
   // the user record is never persisted (prevents half-saved state).
