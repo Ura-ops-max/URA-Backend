@@ -70,11 +70,13 @@ export const createOrderFromCart = async (req: Request, res: Response) => {
       phone:       bodyAddress?.phone       || saved.phone,
     };
 
-    if (!shippingAddress.fullAddress || !shippingAddress.city || !shippingAddress.phone) {
+    // City & full address are temporarily optional (hidden on the checkout form).
+    // Only a phone number is required for now.
+    if (!shippingAddress.phone) {
       return res.status(400).json({
         success: false,
         code: 'SHIPPING_REQUIRED',
-        message: 'Please provide a complete shipping address (full address, city, and phone number).',
+        message: 'Please provide a phone number for delivery.',
       });
     }
 

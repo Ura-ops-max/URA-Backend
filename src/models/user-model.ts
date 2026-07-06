@@ -20,6 +20,8 @@ export interface IUser extends Document {
   emailVerified?: boolean;
   emailVerificationToken?: string;
   emailVerificationExpires?: Date;
+  passwordResetToken?: string;
+  passwordResetExpires?: Date;
   twoFactorEnabled?: boolean;
   twoFactorSecret?: string; // TOTP secret (encrypted at rest)
   mfaRecoveryCodes?: string[]; // hashed
@@ -63,6 +65,8 @@ const userSchema = new Schema<IUser>(
     emailVerified: { type: Boolean, default: false },
     emailVerificationToken: { type: String, index: true, select: false },
     emailVerificationExpires: { type: Date, select: false },
+    passwordResetToken: { type: String, index: true, select: false },
+    passwordResetExpires: { type: Date, select: false },
     twoFactorEnabled: { type: Boolean, default: false },
     twoFactorSecret: { type: String, select: false },
     mfaRecoveryCodes: [{ type: String, select: false }],

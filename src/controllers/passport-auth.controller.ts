@@ -12,7 +12,7 @@ import {
   generateEmailToken,
   verifyToken,
 } from '@/services/token.service';
-import { sendVerificationEmail } from '@/services/email.service';
+import { sendVerificationEmail, sendPasswordResetEmail, sendResetSuccessEmail } from '@/services/email.service';
 import { asyncHandler } from '@/middleware/errorHandler';
 import { blacklistToken } from '@/services/token-blacklist.service';
 import { config } from '@/config/env.config';
@@ -261,6 +261,72 @@ export const verifyEmail = asyncHandler(async (req: Request, res: Response): Pro
   res.status(HTTP_STATUS.OK).json({
     success: true,
     message: 'Email verified successfully. You can now log in.',
+  });
+});
+
+/**
+ * Forgot password — email a reset link
+ */
+export const forgotPassword = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const email = String(req.body.email || '').toLowerCase().trim();
+  if (!email) throw new ValidationError('Email is required');
+
+  const user = await User.findOne({ email });
+
+  // Only act if the user exists, but always respond the same way so we don't
+  // reveal which emails are registered.
+  if (user) {
+    const { token, hash, expires } = generateEmailToken();
+    user.passwordResetToken = hash;
+    user.passwordResetExpires = expires;
+    await user.save();
+
+    const resetURL = `${config.frontend.url}/auth/reset-password?token=${token}`;
+    try {
+      await sendPasswordResetEmail(user.email, resetURL);
+    } catch (e) {
+      // Non-fatal: don't 500 the request if the mail server is down.
+      console.error('[forgotPassword] reset email failed:', (e as Error).message);
+    }
+  }
+
+  res.status(HTTP_STATUS.OK).json({
+    success: true,
+    message: 'If an account with that email exists, a password reset link has been sent.',
+  });
+});
+
+/**
+ * Reset password — set a new password using the emailed token
+ */
+export const resetPassword = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const { token, password } = req.body as { token?: string; password?: string };
+  if (!token || !password) throw new ValidationError('Token and new password are required');
+  if (password.length < 8) throw new ValidationError('Password must be at least 8 characters');
+
+  const crypto = await import('crypto');
+  const hash = crypto.createHash('sha256').update(token).digest('hex');
+
+  const user = await User.findOne({
+    passwordResetToken: hash,
+    passwordResetExpires: { $gt: new Date() },
+  }).select('+password');
+
+  if (!user) throw new ValidationError('Invalid or expired reset token');
+
+  user.password = await bcrypt.hash(password, 12);
+  user.passwordResetToken = undefined as unknown as string;
+  user.passwordResetExpires = undefined as unknown as Date;
+  await user.save();
+
+  // Fire-and-forget confirmation email (must not block or 500 the response).
+  sendResetSuccessEmail(user.email).catch(e =>
+    console.error('[resetPassword] success email failed:', (e as Error).message)
+  );
+
+  res.status(HTTP_STATUS.OK).json({
+    success: true,
+    message: 'Password reset successful. You can now sign in with your new password.',
   });
 });
 

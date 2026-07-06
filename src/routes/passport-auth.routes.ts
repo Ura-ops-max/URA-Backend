@@ -7,6 +7,8 @@ import {
   refresh,
   logout,
   verifyEmail,
+  forgotPassword,
+  resetPassword,
   googleAuth,
   googleCallback,
   microsoftAuth,
@@ -25,6 +27,8 @@ router.post('/login', validateRequest(loginSchema), login);
 router.post('/logout', requireAuth, logout);
 router.post('/refresh', validateRequest(refreshTokenSchema), refresh);
 router.get('/verify-email', verifyEmail);
+router.post('/forgot-password', forgotPassword);
+router.post('/reset-password', resetPassword);
 router.get('/check-username',  validateRequest(checkUsernameSchema), checkUsernameAvailability);
 
 // 2FA
