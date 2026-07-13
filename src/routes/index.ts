@@ -17,6 +17,7 @@ import webhookRouter from '@/routes/webhook.route';
 import onboardingRoutes from '@/routes/onboarding.routes';
 import paylukRoutes from '@/routes/payluk.routes';
 import assistantRoutes from '@/routes/assistant.routes';
+import deliveryRoutes from '@/routes/delivery.routes';
 
 const router = Router();
 
@@ -37,5 +38,6 @@ router.use('/webhooks', webhookRouter);
 router.use('/onboarding', onboardingRoutes);
 router.use('/payluk', paylukRoutes);
 router.use('/assistant', assistantRoutes);
+router.use('/delivery', deliveryRoutes);
 
 export default router;
