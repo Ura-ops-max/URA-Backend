@@ -37,7 +37,9 @@ export const generatePresignedUploadUrl = async ({
   fileName,
   contentType,
   folder = 'uploads',
-  expiresIn = 60, // seconds
+  // Must outlast the actual transfer. 60s was fine for images but expired
+  // mid-upload for videos (10-100MB), so S3 rejected the PUT with a 403.
+  expiresIn = 15 * 60, // 15 minutes
 }: {
   fileName: string;
   contentType: string;
