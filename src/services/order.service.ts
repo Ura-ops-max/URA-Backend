@@ -10,6 +10,8 @@ import { createPaymentLink } from '@/services/payluk.service';
 export interface ShippingAddress {
   fullAddress: string;
   city: string;
+  /** Destination state — what the Fez delivery quote is priced on. */
+  state?: string;
   phone: string;
 }
 
@@ -24,7 +26,11 @@ export async function checkoutFromCart(
   paymentMethod = 'card',
   ip?: string,
   userAgent?: string,
+  delivery?: { deliveryFee?: number; deliveryMethod?: 'delivery' | 'pickup' },
 ): Promise<CheckoutResult> {
+  // Shipping is only charged on the delivery option; direct payment sends 0.
+  const deliveryFee = Math.max(0, Number(delivery?.deliveryFee) || 0);
+  const deliveryMethod = delivery?.deliveryMethod === 'delivery' ? 'delivery' : 'pickup';
   const buyer = await User.findById(userId);
   if (!buyer?.paylukCustomerId) {
     const err: any = new Error('Payment profile required');
@@ -57,6 +63,9 @@ export async function checkoutFromCart(
 
   const firstProduct: any = cart.items[0].product;
 
+  // What the buyer actually pays: items subtotal + shipping (0 for pickup).
+  const grandTotal = totalAmount + deliveryFee;
+
   // Find the seller's paylukCustomerId via the product's business owner
   const sellerBusiness = await Business.findById(firstProduct.business).lean();
   const seller = sellerBusiness
@@ -72,7 +81,7 @@ export async function checkoutFromCart(
 
   // Create a fresh escrow for this specific order — Payluk escrows are single-use per payment
   const escrow = await createPaymentLink({
-    amount:           totalAmount,
+    amount:           grandTotal,
     purpose:          firstProduct.name,
     description:      firstProduct.description || firstProduct.name,
     whoPays:          firstProduct.whoPays || 'buyer',
@@ -91,7 +100,10 @@ export async function checkoutFromCart(
     business: firstProduct.business,
     orderNumber: `ORD-${Date.now().toString(36).toUpperCase()}`,
     items: orderItems,
-    totalAmount,
+    // totalAmount is what the buyer is charged (items + shipping).
+    totalAmount: grandTotal,
+    deliveryFee,
+    deliveryMethod,
     shippingAddress,
     paymentMethod,
     status: 'pending',
@@ -107,7 +119,7 @@ export async function checkoutFromCart(
     type: 'ACTIVITY',
     activityData: {
       action: 'ORDER_PLACED',
-      description: `Order ${order.orderNumber} placed — NGN ${totalAmount}`,
+      description: `Order ${order.orderNumber} placed — NGN ${grandTotal}`,
       metadata: { ip, userAgent },
     },
   }).catch(() => {});

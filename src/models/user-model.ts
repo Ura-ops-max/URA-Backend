@@ -34,6 +34,7 @@ export interface IUser extends Document {
   followers: Types.ObjectId[];
   shippingAddress?: {
     phone?: string;
+    state?: string;
     city?: string;
     fullAddress?: string;
   };
@@ -79,6 +80,7 @@ const userSchema = new Schema<IUser>(
     followers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     shippingAddress: {
       phone: { type: String },
+      state: { type: String },
       city: { type: String },
       fullAddress: { type: String },
     },

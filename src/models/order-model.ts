@@ -27,10 +27,15 @@ export interface IOrder extends Document {
   user: mongoose.Types.ObjectId;
   business: mongoose.Types.ObjectId;
   items: IOrderItem[];
+  /** Items subtotal + deliveryFee — this is what the buyer is charged. */
   totalAmount: number;
+  /** Fez shipping cost. 0 for direct/pickup payments. */
+  deliveryFee: number;
+  deliveryMethod: 'delivery' | 'pickup';
   shippingAddress: {
     fullAddress: string;
     city: string;
+    state?: string;
     phone: string;
   };
   status: OrderStatus;
@@ -55,9 +60,14 @@ const OrderSchema: Schema = new Schema({
     image: { type: String }
   }],
   totalAmount: { type: Number, required: true },
+  deliveryFee: { type: Number, default: 0 },
+  deliveryMethod: { type: String, enum: ['delivery', 'pickup'], default: 'pickup' },
   shippingAddress: {
-    fullAddress: { type: String, required: true },
-    city: { type: String, required: true },
+    // Street/city are optional — checkout collects state + phone, and the
+    // rest is pulled from the saved profile when available.
+    fullAddress: { type: String },
+    city: { type: String },
+    state: { type: String },
     phone: { type: String, required: true }
   },
   status: { 

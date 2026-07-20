@@ -35,7 +35,8 @@ export const getCurrentUser = asyncHandler(async (req: Request, res: Response): 
       .sort({ createdAt: -1 })
       .limit(10),
     Business.find({ owner: userId }).select(
-      'businessName businessLogo businessCover followers likes category'
+      // address + contact are used to pre-fill checkout and to price delivery.
+      'businessName businessLogo businessCover followers likes category address contact'
     ),
   ]);
 

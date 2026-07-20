@@ -57,8 +57,10 @@ export const createOrderFromCart = async (req: Request, res: Response) => {
     const userId = getAuthUserId(req);
     if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
-    const { paymentMethod } = req.body;
+    const { paymentMethod, deliveryMethod } = req.body;
     const bodyAddress = req.body.shippingAddress;
+    // Only the delivery option carries a shipping cost; direct payment sends 0.
+    const deliveryFee = deliveryMethod === 'delivery' ? Math.max(0, Number(req.body.deliveryFee) || 0) : 0;
 
     // Fall back to the user's saved shipping address for any missing field
     const dbUser = await User.findById(userId).select('shippingAddress').lean();
@@ -67,6 +69,7 @@ export const createOrderFromCart = async (req: Request, res: Response) => {
     const shippingAddress = {
       fullAddress: bodyAddress?.fullAddress || saved.fullAddress,
       city:        bodyAddress?.city        || saved.city,
+      state:       bodyAddress?.state       || saved.state,
       phone:       bodyAddress?.phone       || saved.phone,
     };
 
@@ -80,7 +83,14 @@ export const createOrderFromCart = async (req: Request, res: Response) => {
       });
     }
 
-    const result = await orderService.checkoutFromCart(userId, shippingAddress, paymentMethod, req.ip, req.headers['user-agent'] as string);
+    const result = await orderService.checkoutFromCart(
+      userId,
+      shippingAddress,
+      paymentMethod,
+      req.ip,
+      req.headers['user-agent'] as string,
+      { deliveryFee, deliveryMethod: deliveryMethod === 'delivery' ? 'delivery' : 'pickup' },
+    );
     return res.status(201).json({ success: true, message: 'Order created successfully', ...result });
   } catch (error: any) {
     const status = error.status || 500;

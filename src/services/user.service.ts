@@ -32,10 +32,12 @@ export async function updateUserProfile(
 
 export async function updateShippingAddress(
   userId: string,
-  data: { phone?: string; city?: string; fullAddress?: string },
+  data: { phone?: string; state?: string; city?: string; fullAddress?: string },
 ) {
   const updateData: Record<string, string> = {};
   if (data.phone)       updateData['shippingAddress.phone']       = data.phone.trim();
+  // State is what the delivery (Fez) quote is priced on, so persist it too.
+  if (data.state)       updateData['shippingAddress.state']       = data.state.trim();
   if (data.city)        updateData['shippingAddress.city']        = data.city.trim();
   if (data.fullAddress) updateData['shippingAddress.fullAddress'] = data.fullAddress.trim();
 
