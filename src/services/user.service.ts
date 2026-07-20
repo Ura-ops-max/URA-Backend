@@ -10,11 +10,17 @@ export const getUserById = (userId: string) =>
 
 export async function updateUserProfile(
   userId: string,
-  data: { firstName?: string; lastName?: string; bio?: string; profilePicture?: string; coverPicture?: string },
+  data: {
+    firstName?: string; lastName?: string; username?: string; phone?: string;
+    bio?: string; profilePicture?: string; coverPicture?: string;
+  },
 ) {
   const updateData: Record<string, string> = {};
   if (data.firstName)     updateData.firstName      = data.firstName;
   if (data.lastName)      updateData.lastName       = data.lastName;
+  // username & phone were accepted by the API but never persisted.
+  if (data.username)      updateData.username       = data.username.trim().toLowerCase();
+  if (data.phone)         updateData.phone          = data.phone.trim();
   if (data.bio)           updateData.bio            = data.bio;
   if (data.profilePicture) updateData.profilePicture = data.profilePicture;
   if (data.coverPicture)  updateData.coverPicture   = data.coverPicture;

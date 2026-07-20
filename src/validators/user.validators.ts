@@ -34,6 +34,9 @@ const userProfileFields = {
   profilePicture: uriSchema.label('Profile picture'),
 
   coverPicture: uriSchema.label('Cover picture'),
+
+  // Contact details editable from the personal profile.
+  phone: Joi.string().allow('', null).optional(),
 };
 
 export const userBusinessFields = {
@@ -46,6 +49,12 @@ export const userBusinessFields = {
   phone: Joi.string().allow('', null).optional(),
   website: Joi.string().uri().allow('', null).optional(),
   fullAddress: Joi.string().allow('', null).optional(),
+  // Location fields — `state` is what delivery (Fez) pricing depends on.
+  street: Joi.string().allow('', null).optional(),
+  city: Joi.string().allow('', null).optional(),
+  state: Joi.string().allow('', null).optional(),
+  country: Joi.string().allow('', null).optional(),
+  email: Joi.string().email().allow('', null).optional(),
   businessLogo: uriSchema.label('Business Logo'),
   businessCover: uriSchema.label('Business Cover'),
   operatingHours: Joi.array().items(
