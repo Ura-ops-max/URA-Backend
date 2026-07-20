@@ -70,20 +70,35 @@ export const updateBusiness = asyncHandler(async (req: Request, res: Response): 
   if (!userId) throw new AuthenticationError('User not authenticated');
 
   const {
-    businessName, category, about, phone, website,
-    fullAddress, businessLogo, businessCover, operatingHours
+    businessName, category, about, phone, website, email,
+    fullAddress, street, city, state, country,
+    businessLogo, businessCover, operatingHours
   } = req.body;
 
-  const updateData = {
-    businessName,
-    category,
-    about,
-    businessLogo,
-    businessCover,
-    contact: { phone, website },
-    address: { fullAddress },
-    operatingHours
+  // Use dot-notation and only include fields that were actually sent.
+  // Setting `address: {...}` wholesale replaced the object and wiped any
+  // existing state/city on every save — which is why delivery quotes failed.
+  const updateData: Record<string, unknown> = {};
+  const setIfPresent = (key: string, value: unknown) => {
+    if (value !== undefined && value !== null && value !== '') updateData[key] = value;
   };
+
+  setIfPresent('businessName', businessName);
+  setIfPresent('category', category);
+  setIfPresent('about', about);
+  setIfPresent('businessLogo', businessLogo);
+  setIfPresent('businessCover', businessCover);
+  setIfPresent('operatingHours', operatingHours);
+
+  setIfPresent('contact.phone', phone);
+  setIfPresent('contact.website', website);
+  setIfPresent('contact.email', email);
+
+  setIfPresent('address.fullAddress', fullAddress);
+  setIfPresent('address.street', street);
+  setIfPresent('address.city', city);
+  setIfPresent('address.state', state);
+  setIfPresent('address.country', country);
 
   const business = await Business.findOneAndUpdate(
     { owner: userId },
