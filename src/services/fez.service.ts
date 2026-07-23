@@ -51,7 +51,8 @@ async function fezRequest<T = any>(method: 'GET' | 'POST', url: string, body?: u
       method,
       url,
       data: body,
-      headers: { Authorization: `Bearer ${authToken}`, 'secret-key': secretKey },
+      // Fez expects the raw token — NOT `Bearer <token>` (per their docs).
+      headers: { Authorization: authToken, 'secret-key': secretKey },
     });
     return data;
   } catch (err) {
