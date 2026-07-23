@@ -51,8 +51,9 @@ async function fezRequest<T = any>(method: 'GET' | 'POST', url: string, body?: u
       method,
       url,
       data: body,
-      // Fez expects the raw token — NOT `Bearer <token>` (per their docs).
-      headers: { Authorization: authToken, 'secret-key': secretKey },
+      // Fez's live API requires the `Bearer ` prefix (verified via curl — the
+      // raw token returns "Authorization token is missing").
+      headers: { Authorization: `Bearer ${authToken}`, 'secret-key': secretKey },
     });
     return data;
   } catch (err) {
