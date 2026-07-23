@@ -82,10 +82,24 @@ export async function getDeliveryCost(opts: {
     ...(opts.pickUpState ? { pickUpState: opts.pickUpState } : {}),
     ...(opts.weight != null ? { weight: opts.weight } : {}),
   });
+
+  const totalCost = Number(data?.totalCost ?? 0);
+
+  // Fez can reply HTTP 200 with a non-success body (e.g. a state it doesn't
+  // serve from this pickup). Treat that as a real error so the UI shows a clear
+  // message instead of hanging on "Calculating…" or quoting ₦0.
+  if (data?.status !== 'Success' || !(totalCost > 0)) {
+    throw new FezError(
+      data?.description || `Delivery to ${opts.state} isn't available right now.`,
+      422,
+      data,
+    );
+  }
+
   return {
     cost: Number(data?.cost?.cost ?? 0),
     vat: Number(data?.vat?.vatAmount ?? 0),
-    totalCost: Number(data?.totalCost ?? 0),
+    totalCost,
     state: data?.cost?.state ?? opts.state,
     raw: data,
   };
