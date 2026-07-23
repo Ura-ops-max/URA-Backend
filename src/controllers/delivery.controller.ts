@@ -64,7 +64,8 @@ export const deliveryCost = asyncHandler(async (req: Request, res: Response): Pr
       pickUpState: String(pickUpState),
       ...(weight != null ? { weight: Number(weight) } : {}),
     });
-    res.status(200).json({ success: true, ...result });
+    // Nest under `data` — the frontend reads `response.data.data`.
+    res.status(200).json({ success: true, data: result });
   } catch (err) {
     handleFezError(res, err);
   }
