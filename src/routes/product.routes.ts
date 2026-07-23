@@ -12,12 +12,14 @@ import {
   getProductCategories,
   getProductDetails,
   setupProductEscrow,
+  imageSearchProducts,
 } from '@/controllers/product.controller';
 
 const router = Router();
 
 // Discovery
 router.get('/categories',  getProductCategories);                  // GET  /products/categories
+router.post('/image-search', optionalProtect, imageSearchProducts); // POST /products/image-search
 router.get('/',            optionalProtect, getProductCatalog);    // GET  /products
 router.get('/mine',        requireAuth,     getMyProducts);        // GET  /products/mine
 

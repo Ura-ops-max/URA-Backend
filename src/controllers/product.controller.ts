@@ -9,6 +9,24 @@ import { trackEvent } from '@/services/track-event.service';
 import { createPaymentLink, PaylukError } from '@/services/payluk.service';
 import { PRODUCT_CATEGORIES } from '@/constants/categories.constant';
 import { getAuthUserId } from '@/utils/request.utils';
+import { embedImageUrl } from '@/services/ai-embed.service';
+
+/**
+ * Compute and store the image embedding for a product's first image so it
+ * becomes searchable by image. Fire-and-forget — never blocks the request.
+ */
+export async function indexProductImage(productId: string, imageUrl?: string | null): Promise<void> {
+  if (!imageUrl) return;
+  try {
+    const embedding = await embedImageUrl(imageUrl);
+    if (embedding) {
+      await Product.findByIdAndUpdate(productId, { imageEmbedding: embedding });
+      console.log(`🔎 [image-search] indexed product ${productId}`);
+    }
+  } catch (err) {
+    console.error(`[image-search] failed to index ${productId}:`, (err as Error).message);
+  }
+}
 
 export async function tryCreateEscrow(opts: {
   productId:        string;
@@ -52,6 +70,49 @@ export async function tryCreateEscrow(opts: {
   }
 }
 
+/**
+ * POST /products/image-search  { imageUrl }
+ * Embeds the query image and returns the visually-closest products via Atlas
+ * Vector Search over the stored product image embeddings.
+ */
+export const imageSearchProducts = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const { imageUrl, limit } = req.body ?? {};
+  if (!imageUrl || typeof imageUrl !== 'string') {
+    res.status(400).json({ success: false, message: 'imageUrl is required' });
+    return;
+  }
+
+  const queryVector = await embedImageUrl(imageUrl);
+  if (!queryVector) {
+    res.status(502).json({ success: false, message: 'Could not process that image. Try another one.' });
+    return;
+  }
+
+  const numCandidates = 100;
+  const topK = Math.min(Math.max(Number(limit) || 20, 1), 50);
+
+  const results = await Product.aggregate([
+    {
+      $vectorSearch: {
+        index: 'product_image_index',
+        path: 'imageEmbedding',
+        queryVector,
+        numCandidates,
+        limit: topK,
+      },
+    },
+    {
+      $project: {
+        name: 1, price: 1, description: 1, category: 1, media: 1, stock: 1,
+        business: 1, averageRating: 1,
+        score: { $meta: 'vectorSearchScore' },
+      },
+    },
+  ]);
+
+  res.status(200).json({ success: true, total: results.length, products: results });
+});
+
 export const createProduct = asyncHandler(async (req: Request, res: Response): Promise<void> => {
   const userId = getAuthUserId(req);
   if (!userId) { res.status(401).json({ success: false, message: 'Unauthorized' }); return; }
@@ -94,6 +155,9 @@ export const createProduct = asyncHandler(async (req: Request, res: Response): P
     paylukCustomerId: user.paylukCustomerId,
   }).catch(() => {});
 
+  // Index the product image for AI image search (fire-and-forget).
+  indexProductImage(product._id.toString(), media?.[0] ?? null).catch(() => {});
+
   trackEvent({
     targetId: userId,
     targetModel: 'User',
@@ -120,6 +184,11 @@ export const updateProduct = asyncHandler(async (req: Request, res: Response): P
   );
 
   if (!product) { res.status(404).json({ success: false, message: 'Product not found' }); return; }
+
+  // Re-index the image embedding when the media changed.
+  if (req.body?.media) {
+    indexProductImage(product._id.toString(), product.media?.[0] ?? null).catch(() => {});
+  }
 
   trackEvent({
     targetId: userId!,

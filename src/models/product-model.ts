@@ -13,6 +13,10 @@ export interface IProduct extends Document {
     averageRating: number;
     totalReviews: number;
 
+    // Image-search: CLIP embedding of the product's first image (1024 dims).
+    // Populated on create/update; queried via Atlas $vectorSearch.
+    imageEmbedding?: number[];
+
 // ── Payluk Escrow ──────────────────────────────
     paylukEscrowId:     string | null;
     paylukPaymentToken: string | null;
@@ -31,6 +35,9 @@ export const productSchema = new Schema<IProduct>(
         size: { type: String },
         media: [{ type: String, required: true }],
         likes: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+
+        // Vector for Atlas image search (select:false — never sent to clients).
+        imageEmbedding: { type: [Number], select: false, default: undefined },
 
         // RATING FIELDS
         averageRating: {
