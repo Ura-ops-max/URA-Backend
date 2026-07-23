@@ -7,7 +7,6 @@
  */
 import 'dotenv/config';
 import mongoose from 'mongoose';
-import { config } from '@/config/env.config';
 import { Product } from '@/models/product-model';
 import { embedImageUrl, isEmbedConfigured } from '@/services/ai-embed.service';
 
@@ -18,7 +17,9 @@ async function main() {
   }
 
   const all = process.argv.includes('--all');
-  await mongoose.connect(config.db.uri, { dbName: config.db.name });
+  const uri = process.env.MONGODB_URI;
+  if (!uri) { console.error('MONGODB_URI is not set — aborting.'); process.exit(1); }
+  await mongoose.connect(uri, { dbName: process.env.DB_NAME });
   console.log('Connected to MongoDB');
 
   const query = all ? {} : { imageEmbedding: { $exists: false } };
