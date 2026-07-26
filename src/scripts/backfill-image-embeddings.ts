@@ -19,7 +19,7 @@ async function main() {
   const all = process.argv.includes('--all');
   const uri = process.env.MONGODB_URI;
   if (!uri) { console.error('MONGODB_URI is not set — aborting.'); process.exit(1); }
-  await mongoose.connect(uri, { dbName: process.env.DB_NAME });
+  await mongoose.connect(uri, process.env.DB_NAME ? { dbName: process.env.DB_NAME } : {});
   console.log('Connected to MongoDB');
 
   const query = all ? {} : { imageEmbedding: { $exists: false } };

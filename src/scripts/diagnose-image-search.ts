@@ -26,7 +26,7 @@ async function main() {
 
   const uri = process.env.MONGODB_URI;
   if (!uri) { console.log('   ✗ MONGODB_URI not set. Aborting.\n'); process.exit(1); }
-  await mongoose.connect(uri, { dbName: process.env.DB_NAME });
+  await mongoose.connect(uri, process.env.DB_NAME ? { dbName: process.env.DB_NAME } : {});
   console.log('   Connected to MongoDB.');
 
   // Grab a real product image to embed as our test query.
