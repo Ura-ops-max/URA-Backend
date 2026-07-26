@@ -1,13 +1,4 @@
-/**
- * Diagnose the AI image-search pipeline end to end.
- * Run on the server:  npx ts-node src/scripts/diagnose-image-search.ts
- *
- * Checks, in order:
- *   1. AI_EMBED_URL is set and returns a 1024-dim vector.
- *   2. How many products exist vs. how many have an imageEmbedding.
- *   3. The Atlas `product_image_index` vector search actually runs and returns hits.
- * Whichever step fails first is the thing to fix.
- */
+
 import 'dotenv/config';
 import mongoose from 'mongoose';
 import { Product } from '@/models/product-model';

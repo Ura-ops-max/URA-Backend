@@ -10,6 +10,7 @@ import { logger } from '@/utils/logger';
 import { errorHandler, notFoundHandler } from '@/middleware/errorHandler';
 import http from 'http';
 import { socketService } from '@/services/socket.service';
+import { startImageIndexSweep } from '@/services/image-index-sweep.service';
 
 
 // Import routes
@@ -114,6 +115,9 @@ const startServer = async (): Promise<void> => {
         logger.info('📚 API Documentation: http://localhost:' + config.port + '/health');
         logger.info('🔍 Health Check: http://localhost:' + config.port + '/health');
       }
+
+      // Keep image search complete: embed any product that slipped through.
+      startImageIndexSweep();
     });
 
     // Graceful shutdown
