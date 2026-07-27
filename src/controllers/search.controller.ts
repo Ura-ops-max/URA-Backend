@@ -40,7 +40,7 @@ export const globalSearch = async (req: Request, res: Response) => {
         // --- 1. BUSINESS SEARCH LOGIC ---
         if (type === 'all' || type === 'business') {
             let bizQuery: any = {
-                $or: [{ businessName: regex }, { about: regex }, { tagline: regex }]
+                $or: [{ businessName: regex }, { about: regex }, { tagline: regex }, { category: regex }]
             };
 
             // FIX 2: This is now uncommented! It forces businesses to match the category.
@@ -92,7 +92,7 @@ export const globalSearch = async (req: Request, res: Response) => {
         // --- 3. PRODUCT SEARCH LOGIC ---
         if (type === 'all' || type === 'product') {
             let prodQuery: any = {
-                $or: [{ name: regex }, { description: regex }]
+                $or: [{ name: regex }, { description: regex }, { category: regex }]
             };
 
             if (category) prodQuery.category = category;
