@@ -5,7 +5,7 @@ import { Product } from '@/models/product-model';
 import { User } from '@/models/user-model';
 import { Business } from '@/models/business-model';
 import { trackEvent } from '@/services/track-event.service';
-import { createPaymentLink } from '@/services/payluk.service';
+import { createPaymentLink, createPaylukCustomer } from '@/services/payluk.service';
 
 export interface ShippingAddress {
   fullAddress: string;
@@ -66,17 +66,40 @@ export async function checkoutFromCart(
   // What the buyer actually pays: items subtotal + shipping (0 for pickup).
   const grandTotal = totalAmount + deliveryFee;
 
-  // Find the seller's paylukCustomerId via the product's business owner
+  // Find the seller (product's business owner). They need a Payluk customer id
+  // to receive escrow funds. If they never onboarded, auto-create one on the fly
+  // so an un-onboarded seller doesn't block the buyer from checking out.
   const sellerBusiness = await Business.findById(firstProduct.business).lean();
   const seller = sellerBusiness
-    ? await User.findById((sellerBusiness as any).owner).select('paylukCustomerId').lean()
+    ? await User.findById((sellerBusiness as any).owner)
     : null;
 
-  if (!seller?.paylukCustomerId) {
+  if (!seller) {
     const err: any = new Error('This product is not available for purchase yet.');
     err.code = 'PRODUCT_NOT_AVAILABLE';
     err.status = 422;
     throw err;
+  }
+
+  let sellerCustomerId = seller.paylukCustomerId;
+  if (!sellerCustomerId) {
+    try {
+      const created = await createPaylukCustomer({
+        firstName: seller.firstName || (sellerBusiness as any)?.businessName || 'Seller',
+        lastName: seller.lastName || 'Merchant',
+        email: seller.email,
+        phone: (seller as any).phone,
+      });
+      sellerCustomerId = created.customerId;
+      await User.updateOne({ _id: seller._id }, { $set: { paylukCustomerId: sellerCustomerId } });
+      console.log(`✅ [checkout] auto-created Payluk customer for seller ${seller._id}`);
+    } catch (e) {
+      console.error('[checkout] seller Payluk customer creation failed:', (e as Error).message);
+      const err: any = new Error('This product is not available for purchase yet.');
+      err.code = 'PRODUCT_NOT_AVAILABLE';
+      err.status = 422;
+      throw err;
+    }
   }
 
   // Create a fresh escrow for this specific order — Payluk escrows are single-use per payment
@@ -89,7 +112,7 @@ export async function checkoutFromCart(
     deliveryTimeline: firstProduct.deliveryTimeline || 'days',
     totalQuantity:    cart.items.reduce((sum: number, i: any) => sum + i.quantity, 0),
     imageUrl:         firstProduct.media?.[0] ?? null,
-    customerId:       seller.paylukCustomerId!,
+    customerId:       sellerCustomerId!,
   });
 
   const paylukPaymentToken = escrow.paymentToken;
