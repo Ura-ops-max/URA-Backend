@@ -299,6 +299,48 @@ export const initEscrowPayment = async (
 
 
 /**
+ * Add an "additional fee" on top of an escrow (delivery + platform's cut).
+ * PUT /v1/escrow/additional-fee/:paymentToken
+ *
+ * The whole additionalFee is credited to OUR platform merchant wallet — Payluk
+ * takes no cut and it is NOT part of the escrow amount, so the seller's payout
+ * (the escrow amount) is unchanged. This is how we separate delivery fees +
+ * platform commission from the seller's money.
+ *
+ * Must be called while the escrow is still AWAITING_PAYMENT (before the buyer
+ * pays). Uses the platform secret key and MUST NOT send a customer-id header
+ * (paylukAxios only adds customer-id per-call, so a plain PUT is correct).
+ */
+export type UpdateAdditionalFeeResult = {
+    raw:            unknown;
+    additionalFee:  number;
+    payableAmount?: number;
+};
+
+export const updateAdditionalFee = async (
+    paymentToken:  string,
+    additionalFee: number,
+    refundable = true,
+): Promise<UpdateAdditionalFeeResult> =>
+    withRetry(async () => {
+        const fee = Math.max(0, Math.round(additionalFee));
+        console.log('🔍 [updateAdditionalFee]', { paymentToken, additionalFee: fee });
+
+        const resp = await paylukAxios.put(
+            `/v1/escrow/additional-fee/${paymentToken}`,
+            { additionalFee: fee, additionalFeeRefundable: refundable },
+        );
+
+        const data = extractData<Record<string, any>>(resp.data);
+        return {
+            raw:            resp.data,
+            additionalFee:  Number(data?.additionalFee ?? fee),
+            payableAmount:  data?.payableAmount != null ? Number(data.payableAmount) : undefined,
+        };
+    }, 2, 'updateAdditionalFee');
+
+
+/**
  * Verify an escrow payment by its paymentToken or paymentId.
  * GET /v1/escrow/verify/:paymentId
  *
