@@ -58,6 +58,9 @@ export const createOrderFromCart = async (req: Request, res: Response) => {
     if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
     const { paymentMethod, deliveryMethod } = req.body;
+    // 'normal' = buyer pays the clean price, seller absorbs Payluk's fee (like
+    // Paystack). 'escrow' (default) = buyer pays the fee for held protection.
+    const escrowMode = req.body.escrowMode === 'normal' ? 'normal' : 'escrow';
     const bodyAddress = req.body.shippingAddress;
     // Only the delivery option carries a shipping cost; direct payment sends 0.
     const deliveryFee = deliveryMethod === 'delivery' ? Math.max(0, Number(req.body.deliveryFee) || 0) : 0;
@@ -89,7 +92,7 @@ export const createOrderFromCart = async (req: Request, res: Response) => {
       paymentMethod,
       req.ip,
       req.headers['user-agent'] as string,
-      { deliveryFee, deliveryMethod: deliveryMethod === 'delivery' ? 'delivery' : 'pickup' },
+      { deliveryFee, deliveryMethod: deliveryMethod === 'delivery' ? 'delivery' : 'pickup', escrowMode },
     );
     return res.status(201).json({ success: true, message: 'Order created successfully', ...result });
   } catch (error: any) {

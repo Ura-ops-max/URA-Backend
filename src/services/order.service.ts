@@ -26,11 +26,14 @@ export async function checkoutFromCart(
   paymentMethod = 'card',
   ip?: string,
   userAgent?: string,
-  delivery?: { deliveryFee?: number; deliveryMethod?: 'delivery' | 'pickup' },
+  delivery?: { deliveryFee?: number; deliveryMethod?: 'delivery' | 'pickup'; escrowMode?: 'escrow' | 'normal' },
 ): Promise<CheckoutResult> {
   // Shipping is only charged on the delivery option; direct payment sends 0.
   const deliveryFee = Math.max(0, Number(delivery?.deliveryFee) || 0);
   const deliveryMethod = delivery?.deliveryMethod === 'delivery' ? 'delivery' : 'pickup';
+  // 'normal' → seller absorbs Payluk's fee (buyer pays clean price, Paystack-style).
+  // 'escrow' → buyer pays the fee for the held/protected payment.
+  const escrowMode = delivery?.escrowMode === 'normal' ? 'normal' : 'escrow';
   const buyer = await User.findById(userId);
   if (!buyer?.paylukCustomerId) {
     const err: any = new Error('Payment profile required');
@@ -114,7 +117,9 @@ export async function checkoutFromCart(
     amount:           totalAmount,
     purpose:          firstProduct.name,
     description:      firstProduct.description || firstProduct.name,
-    whoPays:          firstProduct.whoPays || 'buyer',
+    // Normal payment: seller bears Payluk's fee → buyer pays the clean price.
+    // Escrow: buyer bears it (the cost of protection).
+    whoPays:          escrowMode === 'normal' ? 'seller' : (firstProduct.whoPays || 'buyer'),
     maxDelivery:      firstProduct.maxDelivery ?? 3,
     deliveryTimeline: firstProduct.deliveryTimeline || 'days',
     totalQuantity:    cart.items.reduce((sum: number, i: any) => sum + i.quantity, 0),
@@ -140,8 +145,13 @@ export async function checkoutFromCart(
     }
   }
 
-  // What the buyer is actually charged: goods + Payluk's fee share + additionalFee.
-  const buyerPayable = (escrow.payableAmount ?? totalAmount + escrow.fee) + additionalFee;
+  // What the buyer is actually charged.
+  // - normal: goods + delivery/platform only (seller absorbs Payluk's fee → no add-on).
+  // - escrow: goods + Payluk's fee share + delivery/platform.
+  const buyerPayable =
+    escrowMode === 'normal'
+      ? totalAmount + additionalFee
+      : (escrow.payableAmount ?? totalAmount + escrow.fee) + additionalFee;
 
   const order = await Order.create({
     user: userId,
