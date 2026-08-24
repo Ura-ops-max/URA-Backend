@@ -44,19 +44,43 @@ async function authenticate(): Promise<{ authToken: string; secretKey: string }>
   }
 }
 
+// Fez can invalidate a token before our cached expiry, replying "Invalid
+// session" / 401. Detect that so we can drop the cache and re-authenticate.
+function isAuthError(err: unknown): boolean {
+  const e = err as AxiosError<{ description?: string; message?: string }>;
+  const status = e.response?.status;
+  const msg = (e.response?.data?.description || e.response?.data?.message || e.message || '').toLowerCase();
+  return status === 401 || status === 403 || /invalid session|token|unauthor|expired/.test(msg);
+}
+
+async function doFezRequest<T>(method: 'GET' | 'POST', url: string, body: unknown, auth: { authToken: string; secretKey: string }): Promise<T> {
+  const { data } = await fezAxios.request<T>({
+    method,
+    url,
+    data: body,
+    // Fez's live API requires the `Bearer ` prefix (verified via curl — the
+    // raw token returns "Authorization token is missing").
+    headers: { Authorization: `Bearer ${auth.authToken}`, 'secret-key': auth.secretKey },
+  });
+  return data;
+}
+
 async function fezRequest<T = any>(method: 'GET' | 'POST', url: string, body?: unknown): Promise<T> {
-  const { authToken, secretKey } = await authenticate();
+  const auth = await authenticate();
   try {
-    const { data } = await fezAxios.request<T>({
-      method,
-      url,
-      data: body,
-      // Fez's live API requires the `Bearer ` prefix (verified via curl — the
-      // raw token returns "Authorization token is missing").
-      headers: { Authorization: `Bearer ${authToken}`, 'secret-key': secretKey },
-    });
-    return data;
+    return await doFezRequest<T>(method, url, body, auth);
   } catch (err) {
+    // Stale/invalid session → force a fresh login and retry once.
+    if (isAuthError(err)) {
+      console.warn('[Fez] session rejected — re-authenticating and retrying once…');
+      cached = null;
+      try {
+        const fresh = await authenticate();
+        return await doFezRequest<T>(method, url, body, fresh);
+      } catch (retryErr) {
+        throw toFezError(retryErr, `Fez request failed: ${method} ${url}`);
+      }
+    }
     throw toFezError(err, `Fez request failed: ${method} ${url}`);
   }
 }
