@@ -263,7 +263,7 @@ export const getProductCatalog = asyncHandler(async (req: Request, res: Response
     .sort({ createdAt: -1 })
     .skip(skip)
     .limit(limit)
-    .populate({ path: 'business', select: '_id businessName businessLogo isVerified' })
+    .populate({ path: 'business', select: '_id businessName businessLogo isVerified owner' })
     .lean();
 
   const formatted = products.map((product: any) => ({
@@ -273,6 +273,8 @@ export const getProductCatalog = asyncHandler(async (req: Request, res: Response
     displayName:   product.business?.businessName,
     displayAvatar: product.business?.businessLogo,
     isVerified:    product.business?.isVerified || false,
+    // Does the requester own this product (owns the business that posted it)?
+    isOwner:       !!currentUserId && product.business?.owner?.toString() === currentUserId,
     likesCount:    product.likes?.length || 0,
     isLiked:       currentUserId ? product.likes?.some((id: any) => id.toString() === currentUserId) : false,
     isWishlisted:  wishlistProductIds.has(product._id.toString()),
