@@ -294,7 +294,7 @@ export const getProductDetails = asyncHandler(async (req: Request, res: Response
 
   const [product, relatedProducts] = await Promise.all([
     Product.findById(id)
-      .populate('business', '_id businessName businessLogo isVerified')
+      .populate('business', '_id businessName businessLogo isVerified owner')
       .lean(),
     // related query depends on the product's category, fetched concurrently
     Product.findById(id).select('category').lean().then(p =>
@@ -316,12 +316,17 @@ export const getProductDetails = asyncHandler(async (req: Request, res: Response
     isWishlisted = !!entry;
   }
 
+  // Does the requester own this product? (they own the business that posted it)
+  const businessOwnerId = (product.business as any)?.owner?.toString();
+  const isOwner = !!currentUserId && businessOwnerId === currentUserId;
+
   res.status(200).json({
     success: true,
     product: {
       ...product,
       isLiked,
       isWishlisted,
+      isOwner,
       likesCount:    product.likes?.length || 0,
       authorId:      (product.business as any)?._id,
       displayName:   (product.business as any)?.businessName,
