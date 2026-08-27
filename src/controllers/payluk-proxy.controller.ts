@@ -27,10 +27,17 @@ export const paylukProxy = asyncHandler(async (req: Request, res: Response): Pro
   const targetPath = req.path;
   const customerId = req.header('customer-id');
 
+  // File uploads (e.g. dispute evidence) arrive as multipart/form-data. Our JSON
+  // body parser leaves that body untouched, so we stream the raw request through
+  // and keep its original Content-Type (with the multipart boundary) intact —
+  // otherwise the fields (like the dispute `message`) never reach Payluk.
+  const reqContentType = req.headers['content-type'] || '';
+  const isMultipart = reqContentType.startsWith('multipart/');
+
   const headers: Record<string, string> = {
     Authorization: `Bearer ${SECRET}`,
     accept: 'application/json',
-    'Content-Type': 'application/json',
+    'Content-Type': isMultipart ? reqContentType : 'application/json',
   };
   if (customerId) headers['customer-id'] = customerId;
 
@@ -41,8 +48,9 @@ export const paylukProxy = asyncHandler(async (req: Request, res: Response): Pro
       method: req.method as never,
       url: targetPath,
       params: req.query,
-      data: hasBody ? req.body : undefined,
+      data: hasBody ? (isMultipart ? req : req.body) : undefined,
       headers,
+      ...(isMultipart ? { maxBodyLength: Infinity, maxContentLength: Infinity } : {}),
     });
     res.status(response.status).json(response.data);
   } catch (err) {
