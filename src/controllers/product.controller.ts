@@ -242,7 +242,7 @@ export const getMyProducts = asyncHandler(async (req: Request, res: Response): P
 
 export const getProductCatalog = asyncHandler(async (req: Request, res: Response): Promise<void> => {
   const currentUserId = getAuthUserId(req);
-  const { businessId, restrict, page = '1' } = req.query;
+  const { businessId, restrict, page = '1', category } = req.query;
 
   const p     = parseInt(page as string) || 1;
   const limit = 15;
@@ -251,6 +251,11 @@ export const getProductCatalog = asyncHandler(async (req: Request, res: Response
   const query: any = {};
   if (restrict === 'true' && businessId) {
     query.business = new Types.ObjectId(businessId as string);
+  }
+  // Optional server-side category filter (so the storefront can filter across
+  // the whole catalog, not just the page already loaded).
+  if (category && category !== 'All') {
+    query.category = category as string;
   }
 
   let wishlistProductIds = new Set<string>();

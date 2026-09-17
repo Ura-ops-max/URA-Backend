@@ -267,6 +267,38 @@ export const verifyEmail = asyncHandler(async (req: Request, res: Response): Pro
 });
 
 /**
+ * Public resend of the email verification code (by email address).
+ * Used by the verify page for users who just registered and aren't logged in.
+ * Always responds success so it never reveals whether an email is registered.
+ */
+export const resendVerificationPublic = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  const ok = {
+    success: true,
+    message: 'If that email needs verifying, a new code is on its way. Check your inbox.',
+  };
+  if (!email) throw new ValidationError('Email is required');
+
+  const user = await User.findOne({ email });
+  // Silently succeed for unknown or already-verified accounts (no enumeration).
+  if (!user || user.emailVerified) {
+    res.status(HTTP_STATUS.OK).json(ok);
+    return;
+  }
+
+  const { code: token, hash, expires } = generateVerificationCode();
+  user.emailVerificationToken = hash;
+  user.emailVerificationExpires = expires;
+  await user.save();
+
+  sendVerificationEmail(user.email, token).catch((e) =>
+    console.error('Resend verification email failed:', e),
+  );
+
+  res.status(HTTP_STATUS.OK).json(ok);
+});
+
+/**
  * Forgot password — email a reset link
  */
 export const forgotPassword = asyncHandler(async (req: Request, res: Response): Promise<void> => {

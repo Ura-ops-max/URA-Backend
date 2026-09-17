@@ -7,6 +7,7 @@ import {
   refresh,
   logout,
   verifyEmail,
+  resendVerificationPublic,
   forgotPassword,
   resetPassword,
   googleAuth,
@@ -27,6 +28,7 @@ router.post('/login', validateRequest(loginSchema), login);
 router.post('/logout', requireAuth, logout);
 router.post('/refresh', validateRequest(refreshTokenSchema), refresh);
 router.get('/verify-email', verifyEmail);
+router.post('/resend-verification', resendVerificationPublic);
 router.post('/forgot-password', forgotPassword);
 router.post('/reset-password', resetPassword);
 router.get('/check-username',  validateRequest(checkUsernameSchema), checkUsernameAvailability);
