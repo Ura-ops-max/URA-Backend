@@ -43,8 +43,11 @@ export interface IOrder extends Document {
   paymentMethod: 'card' | 'transfer' | 'wallet';
   payment?: IPaymentDetails;
   paylukPaymentToken?: string; // Stored at checkout; used for confirmation lookup
+  paylukEscrowId?: string | null; // Buyer releases this escrow when they confirm receipt
   paidAt?: Date;
   trackingNumber?: string;
+  /** How it reaches the buyer: Fez rider, buyer collects, or the shop delivers itself. */
+  fulfilment?: 'fez' | 'pickup' | 'seller_delivery';
   orderNumber: string;
 }
 
@@ -90,7 +93,8 @@ const OrderSchema: Schema = new Schema({
   paylukPaymentToken: { type: String, index: true },
   paylukEscrowId: { type: String, default: null },
   paidAt: Date,
-  trackingNumber: { type: String }
+  trackingNumber: { type: String },
+  fulfilment: { type: String, enum: ['fez', 'pickup', 'seller_delivery'] }
 }, { timestamps: true });
 
 export default mongoose.model<IOrder>('Order', OrderSchema);

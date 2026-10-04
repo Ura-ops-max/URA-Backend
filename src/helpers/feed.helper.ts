@@ -36,6 +36,8 @@ export async function buildFeedPost(
     authorId:      author?._id,
     displayName:   isBusiness ? author?.businessName : `${author?.firstName} ${author?.lastName}`,
     displayAvatar: isBusiness ? author?.businessLogo  : author?.profilePicture,
+    // Public page link for business authors (ura.com.ng/<slug>).
+    businessSlug:  isBusiness ? author?.slug : undefined,
     username:      isBusiness ? null : author?.username,
     likesCount:    post.likes?.length ?? 0,
     commentsCount,

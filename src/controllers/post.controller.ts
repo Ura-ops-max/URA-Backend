@@ -23,7 +23,7 @@ async function populateFeed(query: any, skip: number, limit: number) {
     .sort({ createdAt: -1 })
     .skip(skip)
     .limit(limit)
-    .populate({ path: 'author', select: '_id username firstName lastName profilePicture businessName businessLogo isVerified' })
+    .populate({ path: 'author', select: '_id username firstName lastName profilePicture businessName businessLogo isVerified slug' })
     .populate('product')
     .lean();
 }
@@ -107,7 +107,7 @@ export const getPostById = asyncHandler(async (req: Request, res: Response): Pro
   }
 
   const post = await Post.findById(id)
-    .populate({ path: 'author', select: '_id username firstName lastName profilePicture businessName businessLogo isVerified' })
+    .populate({ path: 'author', select: '_id username firstName lastName profilePicture businessName businessLogo isVerified slug' })
     .populate('product')
     .lean();
 

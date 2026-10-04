@@ -6,18 +6,19 @@ import {
   deleteRecentSearch, 
   clearAllRecent 
 } from '../controllers/search.controller';
-import { requireAuth } from '../middleware/passport-auth';
+import { requireAuth, optionalProtect } from '../middleware/passport-auth';
 
 const router = Router();
 
-// Every search route should be protected so we can track history per user
-router.use(requireAuth);
-
 /**
  * @route   GET /api/v1/search
- * @desc    Live search for Businesses, Users, Products, and Posts
+ * @desc    Live search for Businesses, Users, Products, and Posts.
+ *          Open to signed-out visitors so they can browse before joining.
  */
-router.get('/', globalSearch);
+router.get('/', optionalProtect, globalSearch);
+
+// Search history is personal, so everything below needs a signed-in user.
+router.use(requireAuth);
 
 /**
  * @route   GET /api/v1/search/recent

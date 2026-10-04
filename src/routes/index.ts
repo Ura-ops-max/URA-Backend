@@ -18,6 +18,7 @@ import onboardingRoutes from '@/routes/onboarding.routes';
 import paylukRoutes from '@/routes/payluk.routes';
 import assistantRoutes from '@/routes/assistant.routes';
 import deliveryRoutes from '@/routes/delivery.routes';
+import publicBusinessRoutes from '@/routes/public-business.routes';
 
 const router = Router();
 
@@ -39,5 +40,6 @@ router.use('/onboarding', onboardingRoutes);
 router.use('/payluk', paylukRoutes);
 router.use('/assistant', assistantRoutes);
 router.use('/delivery', deliveryRoutes);
+router.use('/businesses', publicBusinessRoutes);
 
 export default router;

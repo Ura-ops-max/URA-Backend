@@ -268,7 +268,7 @@ export const getProductCatalog = asyncHandler(async (req: Request, res: Response
     .sort({ createdAt: -1 })
     .skip(skip)
     .limit(limit)
-    .populate({ path: 'business', select: '_id businessName businessLogo isVerified owner' })
+    .populate({ path: 'business', select: '_id businessName businessLogo isVerified owner slug' })
     .lean();
 
   const formatted = products.map((product: any) => ({
@@ -277,6 +277,7 @@ export const getProductCatalog = asyncHandler(async (req: Request, res: Response
     authorId:      product.business?._id,
     displayName:   product.business?.businessName,
     displayAvatar: product.business?.businessLogo,
+    businessSlug:  product.business?.slug,
     isVerified:    product.business?.isVerified || false,
     // Does the requester own this product (owns the business that posted it)?
     isOwner:       !!currentUserId && product.business?.owner?.toString() === currentUserId,
@@ -301,7 +302,7 @@ export const getProductDetails = asyncHandler(async (req: Request, res: Response
 
   const [product, relatedProducts] = await Promise.all([
     Product.findById(id)
-      .populate('business', '_id businessName businessLogo isVerified owner')
+      .populate('business', '_id businessName businessLogo isVerified owner slug')
       .lean(),
     // related query depends on the product's category, fetched concurrently
     Product.findById(id).select('category').lean().then(p =>

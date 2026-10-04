@@ -132,9 +132,32 @@ export const getMyOrders = async (req: Request, res: Response) => {
 
 export const getOrderById = async (req: Request, res: Response) => {
   try {
-    const order = await orderService.getOrderByIdForUser(req.params.id, getAuthUserId(req)!);
-    return res.status(200).json({ success: true, order });
+    const { order, role } = await orderService.getOrderByIdForUser(String(req.params.id), getAuthUserId(req)!);
+    return res.status(200).json({ success: true, order, role });
   } catch (error: any) {
     return res.status(error.status || 500).json({ success: false, message: error.message });
+  }
+};
+
+// ─── Seller: orders customers placed with my business ───────────────────────
+
+export const getReceivedOrders = async (req: Request, res: Response) => {
+  try {
+    const orders = await orderService.getReceivedOrdersForSeller(getAuthUserId(req)!);
+    return res.status(200).json({ success: true, orders });
+  } catch {
+    return res.status(500).json({ success: false, message: 'Failed to fetch received orders' });
+  }
+};
+
+// ─── Seller: order is ready (books Fez delivery, or tells buyer to pick up) ──
+
+export const markOrderReady = async (req: Request, res: Response) => {
+  try {
+    const mode = req.body?.mode === 'self_delivery' ? 'self_delivery' : 'pickup';
+    const order = await orderService.markOrderReady(String(req.params.id), getAuthUserId(req)!, mode);
+    return res.status(200).json({ success: true, order });
+  } catch (error: any) {
+    return res.status(error.status || 500).json({ success: false, message: error.message || 'Could not update order' });
   }
 };

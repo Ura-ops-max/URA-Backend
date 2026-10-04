@@ -1,11 +1,12 @@
 import mongoose from 'mongoose';
 import Order, { OrderStatus } from '@/models/order-model';
 import Cart from '@/models/cart-model';
-import { Product } from '@/models/product-model';
 import { User } from '@/models/user-model';
 import { Business } from '@/models/business-model';
 import { trackEvent } from '@/services/track-event.service';
-import { createPaymentLink, createPaylukCustomer, updateAdditionalFee } from '@/services/payluk.service';
+import { createPaymentLink, createPaylukCustomer, updateAdditionalFee, verifyPaymentToken } from '@/services/payluk.service';
+import { createDeliveryOrder, isFezConfigured, type CreateDeliveryInput } from '@/services/fez.service';
+import { markOrderPaid, notifyOrderEvent, isPaidStatus } from '@/services/order-events.service';
 
 export interface ShippingAddress {
   fullAddress: string;
@@ -45,6 +46,20 @@ export async function checkoutFromCart(
   const cart = await Cart.findOne({ user: userId }).populate('items.product');
   if (!cart || cart.items.length === 0) {
     const err: any = new Error('Cart is empty');
+    err.status = 400;
+    throw err;
+  }
+
+  // One order = one seller's escrow. A mixed cart would send every shop's money
+  // to the first shop, so ask the buyer to check out one shop at a time.
+  const shopIds = new Set(
+    cart.items.map((i: any) => String(i.product?.business ?? '')).filter(Boolean),
+  );
+  if (shopIds.size > 1) {
+    const err: any = new Error(
+      'Your cart has items from more than one shop. Please check out one shop at a time (remove the other items for now).',
+    );
+    err.code = 'MIXED_SELLERS';
     err.status = 400;
     throw err;
   }
@@ -195,13 +210,17 @@ export async function checkoutFromCart(
   };
 }
 
+/**
+ * Buyer returns from Payluk. We ASK PAYLUK whether the money actually arrived
+ * before marking the order paid — the paymentId in the URL alone proves nothing.
+ * If Payluk hasn't confirmed yet, we report "pending"; the Payluk webhook will
+ * finish the job and notify everyone when the money lands.
+ */
 export async function confirmPayment(
   userId: string,
   paymentId: string,
-): Promise<{ alreadyConfirmed: boolean; order: Record<string, unknown> }> {
-  const pending = await Order.findOne({ user: userId, paymentStatus: 'pending' })
-    .sort({ createdAt: -1 })
-    .populate('items.product');
+): Promise<{ alreadyConfirmed: boolean; pending?: boolean; order: Record<string, unknown> }> {
+  const pending = await Order.findOne({ user: userId, paymentStatus: 'pending' }).sort({ createdAt: -1 });
 
   if (!pending) {
     const paid = await Order.findOne({ user: userId, paymentStatus: 'paid' }).sort({ createdAt: -1 });
@@ -216,55 +235,131 @@ export async function confirmPayment(
     throw err;
   }
 
-  const session = await mongoose.startSession();
+  let verified = false;
   try {
-    await session.withTransaction(async () => {
-      for (const item of pending.items as any[]) {
-        const productId = item.product?._id ?? item.product;
-        const product = await Product.findById(productId).session(session);
-        if (product && product.stock >= item.quantity) {
-          await Product.findByIdAndUpdate(productId, { $inc: { stock: -item.quantity } }, { session });
-        }
-      }
-      pending.paymentStatus = 'paid';
-      pending.status = OrderStatus.PROCESSING;
-      pending.paidAt = new Date();
-      pending.payment = { provider: 'payluk', transactionRef: paymentId };
-      await pending.save({ session });
-      await Cart.findOneAndDelete({ user: userId }, { session });
-    });
-  } finally {
-    await session.endSession();
+    if (pending.paylukPaymentToken) {
+      const result = await verifyPaymentToken(pending.paylukPaymentToken);
+      verified = isPaidStatus(result.status);
+      if (!verified) console.warn(`[confirmPayment] Payluk status "${result.status}" for ${pending.orderNumber} — not paid yet`);
+    }
+  } catch (e) {
+    console.error('[confirmPayment] Payluk verify failed:', (e as Error).message);
   }
 
-  trackEvent({
-    targetId: (pending._id as any).toString(),
-    targetModel: 'Order',
-    type: 'BOTH',
-    notificationData: {
-      type: 'ORDER',
-      title: 'Payment Confirmed!',
-      message: `Your order ${pending.orderNumber} has been confirmed.`,
-      sender: userId,
-      senderModel: 'User',
-      relatedId: (pending._id as any).toString(),
-      modelType: 'Order',
-    },
-    activityData: { action: 'ORDER_PAID', description: `Payment confirmed for order ${pending.orderNumber} — ref: ${paymentId}` },
-  }).catch(() => {});
+  if (!verified) {
+    return {
+      alreadyConfirmed: false,
+      pending: true,
+      order: { _id: pending._id, orderNumber: pending.orderNumber, totalAmount: pending.totalAmount, status: pending.status, paymentStatus: pending.paymentStatus },
+    };
+  }
 
+  const updated = (await markOrderPaid(pending._id, paymentId)) ?? (await Order.findById(pending._id));
   return {
     alreadyConfirmed: false,
-    order: { _id: pending._id, orderNumber: pending.orderNumber, totalAmount: pending.totalAmount, status: pending.status, paymentStatus: pending.paymentStatus },
+    order: { _id: updated!._id, orderNumber: updated!.orderNumber, totalAmount: updated!.totalAmount, status: updated!.status, paymentStatus: updated!.paymentStatus },
   };
 }
 
 export const getOrdersForUser = (userId: string) =>
   Order.find({ user: userId }).sort({ createdAt: -1 }).populate('items.product', 'name media price');
 
+/** Businesses owned by this user (a seller can own more than one). */
+const businessIdsOwnedBy = async (userId: string) =>
+  (await Business.find({ owner: userId }).select('_id').lean()).map((b: any) => String(b._id));
+
+/** Buyer OR the selling business's owner may view an order. */
 export const getOrderByIdForUser = async (orderId: string, userId: string) => {
-  const order = await Order.findById(orderId).populate('items.product', 'name media price');
+  if (!mongoose.isValidObjectId(orderId)) { const e: any = new Error('Order not found'); e.status = 404; throw e; }
+  const order = await Order.findById(orderId)
+    .populate('items.product', 'name media price')
+    .populate('business', 'businessName slug businessLogo address contact')
+    .populate('user', 'firstName lastName email');
   if (!order) { const e: any = new Error('Order not found'); e.status = 404; throw e; }
-  if (order.user.toString() !== userId) { const e: any = new Error('Unauthorized'); e.status = 403; throw e; }
+  const buyerId = String((order.user as any)?._id ?? order.user);
+  const isBuyer = buyerId === userId;
+  const isSeller = (await businessIdsOwnedBy(userId)).includes(String((order.business as any)?._id ?? order.business));
+  if (!isBuyer && !isSeller) { const e: any = new Error('Unauthorized'); e.status = 403; throw e; }
+  return { order, role: isBuyer ? 'buyer' : 'seller' };
+};
+
+/** Paid orders that customers placed with this seller's business(es). */
+export const getReceivedOrdersForSeller = async (userId: string) => {
+  const ids = await businessIdsOwnedBy(userId);
+  if (!ids.length) return [];
+  return Order.find({ business: { $in: ids }, paymentStatus: 'paid' })
+    .sort({ paidAt: -1, createdAt: -1 })
+    .populate('user', 'firstName lastName')
+    .populate('business', 'businessName slug');
+};
+
+/**
+ * Seller says the order is ready.
+ *  - delivery orders: book a Fez rider (pickup from the shop → buyer) and save the tracking number
+ *  - pickup orders:   tell the buyer it's ready to collect, OR (mode = 'self_delivery')
+ *                     the shop brings it to the buyer itself
+ */
+export const markOrderReady = async (
+  orderId: string,
+  userId: string,
+  mode?: 'pickup' | 'self_delivery',
+) => {
+  if (!mongoose.isValidObjectId(orderId)) { const e: any = new Error('Order not found'); e.status = 404; throw e; }
+  const order = await Order.findById(orderId);
+  if (!order) { const e: any = new Error('Order not found'); e.status = 404; throw e; }
+  if (!(await businessIdsOwnedBy(userId)).includes(String(order.business))) {
+    const e: any = new Error('Only the seller can update this order'); e.status = 403; throw e;
+  }
+  if (order.paymentStatus !== 'paid') { const e: any = new Error('This order has not been paid yet'); e.status = 400; throw e; }
+  if (order.status !== OrderStatus.PROCESSING) {
+    const e: any = new Error(`This order is already ${order.status}`); e.status = 409; throw e;
+  }
+
+  if (order.deliveryMethod === 'delivery') {
+    if (!isFezConfigured()) {
+      const e: any = new Error('Delivery booking is not set up yet. Please arrange delivery yourself.');
+      e.status = 503; throw e;
+    }
+    const [buyer, business] = await Promise.all([
+      User.findById(order.user).select('firstName lastName email'),
+      Business.findById(order.business).select('businessName address'),
+    ]);
+    const subtotal = order.items.reduce((sum, i) => sum + i.price * i.quantity, 0);
+    try {
+      const delivery: CreateDeliveryInput = {
+        uniqueID: order.orderNumber,
+        recipientName: `${buyer?.firstName ?? ''} ${buyer?.lastName ?? ''}`.trim() || 'URA customer',
+        recipientPhone: order.shippingAddress.phone,
+        recipientAddress: [order.shippingAddress.fullAddress, order.shippingAddress.city].filter(Boolean).join(', '),
+        recipientState: order.shippingAddress.state || business?.address?.state || 'FCT',
+        valueOfItem: subtotal,
+        itemDescription: order.items.map((i) => `${i.name} x${i.quantity}`).join(', ').slice(0, 200),
+      };
+      if (buyer?.email) delivery.recipientEmail = buyer.email;
+      if (business?.address?.state) delivery.pickUpState = business.address.state;
+      if (business?.address?.fullAddress) delivery.pickUpAddress = business.address.fullAddress;
+      const { trackingNo } = await createDeliveryOrder(delivery);
+      if (trackingNo) order.trackingNumber = trackingNo;
+      order.fulfilment = 'fez';
+    } catch (err) {
+      console.error('[markOrderReady] Fez booking failed:', (err as Error).message);
+      notifyOrderEvent(order, 'DELIVERY_BOOKING_FAILED').catch(() => {});
+      const e: any = new Error('Could not book a delivery rider right now. Please try again shortly.');
+      e.status = 502; throw e;
+    }
+    order.status = OrderStatus.SHIPPED;
+    await order.save();
+    notifyOrderEvent(order, 'SHIPPED').catch(() => {});
+  } else if (mode === 'self_delivery') {
+    order.status = OrderStatus.SHIPPED; // shown as "On the way (by the shop)"
+    order.fulfilment = 'seller_delivery';
+    await order.save();
+    notifyOrderEvent(order, 'SELLER_DELIVERING').catch(() => {});
+  } else {
+    order.status = OrderStatus.SHIPPED; // shown to people as "Ready for pickup"
+    order.fulfilment = 'pickup';
+    await order.save();
+    notifyOrderEvent(order, 'READY_FOR_PICKUP').catch(() => {});
+  }
   return order;
 };

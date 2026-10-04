@@ -111,3 +111,34 @@ export const sendWorkspaceInvitationEmail = async (
     throw new Error(`Error sending workspace invitation email: ${(error as Error).message}`);
   }
 };
+
+/**
+ * Order updates (paid, shipped, ready, completed…) for buyers and sellers.
+ * Never throws — an email problem must not block an order from moving forward.
+ */
+const escapeHtml = (t: string) =>
+  t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+export const sendOrderEmail = async (
+  email: string,
+  title: string,
+  message: string,
+  orderUrl: string,
+): Promise<void> => {
+  try {
+    const info = await transporter.sendMail({
+      from: `${sender.name} <${sender.email}>`,
+      to: email,
+      subject: `URA: ${title}`,
+      html: `<div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;padding:24px;color:#111">
+        <h2 style="color:#FF6B35;margin:0 0 12px">${escapeHtml(title)}</h2>
+        <p style="font-size:15px;line-height:1.5">${escapeHtml(message)}</p>
+        <p style="margin:24px 0"><a href="${escapeHtml(orderUrl)}" style="background:#FF6B35;color:#fff;padding:12px 20px;border-radius:10px;text-decoration:none;font-weight:bold">View order</a></p>
+        <p style="font-size:12px;color:#888">URA — buy and sell safely with escrow.</p>
+      </div>`,
+    });
+    logger.info('Order email sent', { messageId: info.messageId, title });
+  } catch (error) {
+    logger.error('Error sending order email (continuing)', error);
+  }
+};

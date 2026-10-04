@@ -1,10 +1,8 @@
 import express from 'express';
 import crypto from 'crypto';
-import mongoose from 'mongoose';
 import Order, { OrderStatus } from '@/models/order-model';
-import Cart from '@/models/cart-model';
 import { Product } from '@/models/product-model';
-import { trackEvent } from '@/services/track-event.service';
+import { markOrderPaid, notifyOrderEvent } from '@/services/order-events.service';
 
 const router = express.Router();
 
@@ -97,7 +95,8 @@ router.post('/payluk', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Handler: escrow.ongoing — buyer payment confirmed, money held in escrow
+// Handler: escrow.ongoing — buyer payment confirmed, money held in escrow.
+// markOrderPaid is atomic + idempotent and notifies buyer and seller.
 // ---------------------------------------------------------------------------
 async function handlePaymentReceived(data: Record<string, any>) {
   const paymentToken: string | undefined = data?.paymentToken || data?.token;
@@ -112,144 +111,49 @@ async function handlePaymentReceived(data: Record<string, any>) {
     return;
   }
 
-  // Idempotency guard
-  if (order.paymentStatus === 'paid') {
-    console.log('[webhook] Order already marked paid — skipping');
-    return;
-  }
-
   const transactionRef: string =
-    data?.paymentDetails?.reference ||
-    data?.reference ||
-    paymentToken;
+    data?.paymentDetails?.reference || data?.reference || paymentToken;
 
-  // Atomic: deduct stock + mark paid + clear cart
-  const session = await mongoose.startSession();
-  try {
-    await session.withTransaction(async () => {
-      for (const item of order.items) {
-        const product = await Product.findById(item.product).session(session);
-        if (!product) {
-          console.warn(`[webhook] Product for item "${item.name}" not found — skipping stock`);
-          continue;
-        }
-        if (product.stock < item.quantity) {
-          throw new Error(`"${product.name}" is out of stock`);
-        }
-        await Product.findByIdAndUpdate(
-          item.product,
-          { $inc: { stock: -item.quantity } },
-          { session }
-        );
-      }
-
-      order.paymentStatus = 'paid';
-      order.status = OrderStatus.PROCESSING;
-      order.paidAt = new Date();
-      order.payment = {
-        provider: 'payluk',
-        transactionRef,
-        details: data,
-      };
-      await order.save({ session });
-
-      await Cart.findOneAndDelete({ user: order.user }, { session });
-    });
-  } finally {
-    await session.endSession();
-  }
-
-  trackEvent({
-    targetId: order._id.toString(),
-    targetModel: 'Order',
-    type: 'BOTH',
-    activityData: {
-      action: 'ORDER_PAID',
-      description: `Order ${order.orderNumber} payment received via Payluk`,
-      metadata: { transactionRef },
-    },
-    notificationData: {
-      type: 'BUSINESS',
-      title: 'Payment Received',
-      message: `Order ${order.orderNumber} has been paid and is being processed.`,
-      sender: 'system',
-      senderModel: 'User',
-      relatedId: order._id.toString(),
-      modelType: 'Order',
-    },
-  }).catch(e => console.error('[webhook] trackEvent failed:', e));
+  const updated = await markOrderPaid(order._id, transactionRef, data);
+  if (!updated) console.log('[webhook] Order already marked paid — skipping');
 }
 
 // ---------------------------------------------------------------------------
-// Handler: escrow.completed — buyer confirmed delivery, funds released to seller
+// Handler: escrow.completed — buyer confirmed receipt, funds released to seller
 // ---------------------------------------------------------------------------
 async function handleEscrowCompleted(data: Record<string, any>) {
   const paymentToken: string | undefined = data?.paymentToken || data?.token;
   if (!paymentToken) return;
 
-  const order = await Order.findOne({ paylukPaymentToken: paymentToken });
-  if (!order || order.status === OrderStatus.DELIVERED) return;
-
-  order.status = OrderStatus.DELIVERED;
-  await order.save();
-
-  trackEvent({
-    targetId: order._id.toString(),
-    targetModel: 'Order',
-    type: 'BOTH',
-    activityData: {
-      action: 'ORDER_DELIVERED',
-      description: `Order ${order.orderNumber} funds released to seller`,
-    },
-    notificationData: {
-      type: 'BUSINESS',
-      title: 'Order Completed',
-      message: `Order ${order.orderNumber} has been completed and funds released.`,
-      sender: 'system',
-      senderModel: 'User',
-      relatedId: order._id.toString(),
-      modelType: 'Order',
-    },
-  }).catch(() => {});
+  const order = await Order.findOneAndUpdate(
+    { paylukPaymentToken: paymentToken, status: { $ne: OrderStatus.DELIVERED } },
+    { $set: { status: OrderStatus.DELIVERED } },
+    { new: true },
+  );
+  if (!order) return;
+  notifyOrderEvent(order, 'DELIVERED').catch(() => {});
 }
 
 // ---------------------------------------------------------------------------
-// Handler: escrow.refunded
+// Handler: escrow.refunded — only restock if stock was actually taken (paid)
 // ---------------------------------------------------------------------------
 async function handleEscrowRefunded(data: Record<string, any>) {
   const paymentToken: string | undefined = data?.paymentToken || data?.token;
   if (!paymentToken) return;
 
-  const order = await Order.findOne({ paylukPaymentToken: paymentToken });
-  if (!order) return;
+  const before = await Order.findOneAndUpdate(
+    { paylukPaymentToken: paymentToken, status: { $ne: OrderStatus.REFUNDED } },
+    { $set: { status: OrderStatus.REFUNDED, paymentStatus: 'failed' } },
+  ); // returns the order as it was BEFORE this update
+  if (!before) return;
 
-  order.status = OrderStatus.REFUNDED;
-  order.paymentStatus = 'failed';
-  await order.save();
-
-  // Re-stock items
-  for (const item of order.items) {
-    await Product.findByIdAndUpdate(item.product, { $inc: { stock: item.quantity } });
+  if (before.paymentStatus === 'paid') {
+    for (const item of before.items) {
+      await Product.findByIdAndUpdate(item.product, { $inc: { stock: item.quantity } });
+    }
   }
-
-  trackEvent({
-    targetId: order._id.toString(),
-    targetModel: 'Order',
-    type: 'BOTH',
-    activityData: {
-      action: 'ORDER_REFUNDED',
-      description: `Order ${order.orderNumber} refunded`,
-    },
-    notificationData: {
-      type: 'BUSINESS',
-      title: 'Order Refunded',
-      message: `Order ${order.orderNumber} has been refunded.`,
-      sender: 'system',
-      senderModel: 'User',
-      relatedId: order._id.toString(),
-      modelType: 'Order',
-    },
-  }).catch(() => {});
+  const order = await Order.findById(before._id);
+  if (order) notifyOrderEvent(order, 'REFUNDED').catch(() => {});
 }
 
 // ---------------------------------------------------------------------------
@@ -261,25 +165,8 @@ async function handleEscrowDisputed(data: Record<string, any>, event: string) {
 
   const order = await Order.findOne({ paylukPaymentToken: paymentToken });
   if (!order) return;
-
-  trackEvent({
-    targetId: order._id.toString(),
-    targetModel: 'Order',
-    type: 'BOTH',
-    activityData: {
-      action: event === 'escrow.disputed' ? 'ORDER_DISPUTED' : 'ORDER_INVESTIGATING',
-      description: `Order ${order.orderNumber} — ${event}`,
-    },
-    notificationData: {
-      type: 'BUSINESS',
-      title: event === 'escrow.disputed' ? 'Dispute Opened' : 'Dispute Under Review',
-      message: `A dispute has been ${event === 'escrow.disputed' ? 'opened' : 'escalated'} for order ${order.orderNumber}.`,
-      sender: 'system',
-      senderModel: 'User',
-      relatedId: order._id.toString(),
-      modelType: 'Order',
-    },
-  }).catch(() => {});
+  console.log(`[webhook] ${event} for order ${order.orderNumber}`);
+  notifyOrderEvent(order, 'DISPUTED').catch(() => {});
 }
 
 export default router;

@@ -59,6 +59,9 @@ const limiter = rateLimit({
   },
   standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  // Never throttle Payluk's payment notifications (they're signature-checked);
+  // a blocked webhook would leave paid orders stuck on "awaiting payment".
+  skip: (req) => req.path.startsWith('/api/v1/webhooks/') || req.path === '/health',
 });
 
 app.use(limiter);
