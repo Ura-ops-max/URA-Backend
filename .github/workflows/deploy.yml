@@ -10,21 +10,19 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Deploy to EC2
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            export NVM_DIR="$HOME/.nvm"
-            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-            cd $HOME/ura-v2_backend
-            git stash
-            git pull origin main
-            npm install --legacy-peer-deps
-            npm run build
-            pm2 restart ura-dev-api || pm2 start ecosystem.config.js
+      - name: Deploy to EC2 over SSH
+        run: |
+          echo "${{ secrets.EC2_SSH_KEY_B64 }}" | base64 -d > /tmp/deploy_key
+          chmod 600 /tmp/deploy_key
+          ssh -i /tmp/deploy_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} '
+              export NVM_DIR="$HOME/.nvm"
+              [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+              cd $HOME/ura-v2_backend
+              git stash
+              git pull origin main
+              npm install --legacy-peer-deps
+              npm run build
+              pm2 restart ura-dev-api || pm2 start ecosystem.config.js
+            '
+          rm -f /tmp/deploy_key
