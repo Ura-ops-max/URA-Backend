@@ -19,6 +19,7 @@ import paylukRoutes from '@/routes/payluk.routes';
 import assistantRoutes from '@/routes/assistant.routes';
 import deliveryRoutes from '@/routes/delivery.routes';
 import publicBusinessRoutes from '@/routes/public-business.routes';
+import adsRoutes from '@/routes/ads.routes';
 
 const router = Router();
 
@@ -41,5 +42,6 @@ router.use('/payluk', paylukRoutes);
 router.use('/assistant', assistantRoutes);
 router.use('/delivery', deliveryRoutes);
 router.use('/businesses', publicBusinessRoutes);
+router.use('/ads', adsRoutes);
 
 export default router;

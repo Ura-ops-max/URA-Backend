@@ -255,7 +255,7 @@ export async function confirmPayment(
     if (paid) {
       return {
         alreadyConfirmed: true,
-        order: { _id: paid._id, orderNumber: paid.orderNumber, totalAmount: paid.totalAmount, status: paid.status, paymentStatus: paid.paymentStatus },
+        order: { _id: paid._id, orderNumber: paid.orderNumber, totalAmount: paid.totalAmount, status: paid.status, paymentStatus: paid.paymentStatus, business: paid.business },
       };
     }
     const err: any = new Error('No pending order found');
@@ -278,14 +278,14 @@ export async function confirmPayment(
     return {
       alreadyConfirmed: false,
       pending: true,
-      order: { _id: pending._id, orderNumber: pending.orderNumber, totalAmount: pending.totalAmount, status: pending.status, paymentStatus: pending.paymentStatus },
+      order: { _id: pending._id, orderNumber: pending.orderNumber, totalAmount: pending.totalAmount, status: pending.status, paymentStatus: pending.paymentStatus, business: pending.business },
     };
   }
 
   const updated = (await markOrderPaid(pending._id, paymentId)) ?? (await Order.findById(pending._id));
   return {
     alreadyConfirmed: false,
-    order: { _id: updated!._id, orderNumber: updated!.orderNumber, totalAmount: updated!.totalAmount, status: updated!.status, paymentStatus: updated!.paymentStatus },
+    order: { _id: updated!._id, orderNumber: updated!.orderNumber, totalAmount: updated!.totalAmount, status: updated!.status, paymentStatus: updated!.paymentStatus, business: updated!.business },
   };
 }
 
