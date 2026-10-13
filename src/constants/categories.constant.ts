@@ -8,5 +8,8 @@ export const PRODUCT_CATEGORIES = [
   "Health & Fitness",
   "Toys & Games",
   "Automotive",
+  "Food & Drinks",
+  "Services",
+  "Pharmacy & Health",
   "General"
 ];

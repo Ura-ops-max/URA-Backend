@@ -166,9 +166,23 @@ export const getUserProfile = asyncHandler(async (req: Request, res: Response): 
     ? loggedInUser.bookmarkedBusinesses.some(id => id.toString() === user.businesses?.[0]?.toString())
     : false;
 
+  // Only the owner may see private fields. Everyone else gets public fields only
+  // (no email, phone or Payluk id).
+  const isOwnProfile = loggedInUserId === userId;
+  let safeUser: any = user;
+  if (!isOwnProfile) {
+    const obj = user.toObject();
+    delete (obj as any).email;
+    delete (obj as any).phone;
+    delete (obj as any).paylukCustomerId;
+    delete (obj as any).twoFactorEnabled;
+    delete (obj as any).loanEligibility;
+    safeUser = obj;
+  }
+
   res.status(HTTP_STATUS.OK).json({
     success: true,
-    user,
+    user: safeUser,
     business,
     related: {
       isFollowing,

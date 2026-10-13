@@ -141,6 +141,15 @@ const startServer = async (): Promise<void> => {
 
     process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
     process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+    // Safety net: log unexpected async errors but keep the server running, so a
+    // single bad request can never take the whole process down.
+    process.on('unhandledRejection', (reason) => {
+      logger.error('Unhandled promise rejection (server stays up):', reason);
+    });
+    process.on('uncaughtException', (err) => {
+      logger.error('Uncaught exception (server stays up):', err);
+    });
   } catch (error) {
     logger.error('Failed to start server:', error);
     process.exit(1);

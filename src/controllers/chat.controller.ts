@@ -3,7 +3,7 @@ import { Conversation } from "@/models/conversation-model";
 import { Message } from "@/models/message-model";
 import { Business } from '@/models/business-model';
 import { Types } from 'mongoose';
-import { trackEvent } from '@/services/track-event.service'; // Added import
+import { trackEvent } from '@/services/track-event.service';
 
 const getAuthUserId = (req: Request): string | null => {
   const user = (req as any).user;
@@ -11,27 +11,46 @@ const getAuthUserId = (req: Request): string | null => {
   return id ? id.toString() : null;
 };
 
-export const accessConversation = async (req: Request, res: Response) => {
+const isValidId = (v: unknown): v is string =>
+  typeof v === 'string' && Types.ObjectId.isValid(v);
+
+// The signed-in user may act as themselves (their own id) or as a business they
+// own. Returns true only if `profileId` is one of those.
+const ownsProfile = async (authUserId: string | null, profileId: string): Promise<boolean> => {
+  if (!authUserId) return false;
+  if (profileId === authUserId) return true;
+  return Boolean(await Business.exists({ _id: profileId, owner: authUserId }));
+};
+
+export const accessConversation = async (req: Request, res: Response): Promise<void> => {
   try {
     const { senderId, senderModel, receiverId, receiverModel } = req.body;
-    const authenticatedUserId = getAuthUserId(req); 
-    
-    if (!receiverId || !senderId) {
-       res.status(400).json({ success: false, message: "Participant IDs are required" });
+    const authenticatedUserId = getAuthUserId(req);
+
+    if (!isValidId(senderId) || !isValidId(receiverId)) {
+      res.status(400).json({ success: false, message: "Valid participant IDs are required" });
+      return;
+    }
+    if (senderModel !== 'User' && senderModel !== 'Business') {
+      res.status(400).json({ success: false, message: "Invalid sender type" });
+      return;
     }
 
+    // The sender must be the signed-in user, or a business they own.
     if (senderModel === 'User') {
       if (senderId !== authenticatedUserId) {
-         res.status(403).json({ success: false, message: "Unauthorized: You cannot impersonate this user." });
+        res.status(403).json({ success: false, message: "Unauthorized: You cannot impersonate this user." });
+        return;
       }
-    } else if (senderModel === 'Business') {
+    } else {
       const business = await Business.findOne({ _id: senderId, owner: authenticatedUserId });
       if (!business) {
-         res.status(403).json({ success: false, message: "Unauthorized: You do not own this business account." });
+        res.status(403).json({ success: false, message: "Unauthorized: You do not own this business account." });
+        return;
       }
     }
 
-    let conversation = await Conversation.findOne({
+    const conversation = await Conversation.findOne({
       participants: {
         $all: [
           { $elemMatch: { participantId: senderId, participantModel: senderModel } },
@@ -43,14 +62,15 @@ export const accessConversation = async (req: Request, res: Response) => {
       .populate('participants.participantId');
 
     if (conversation) {
-       res.status(200).json({ success: true, data: conversation });
+      res.status(200).json({ success: true, data: conversation });
+      return;
     }
 
-    const unreadMap = new Map();
+    const unreadMap = new Map<string, number>();
     unreadMap.set(senderId.toString(), 0);
     unreadMap.set(receiverId.toString(), 0);
 
-    const visibilityMap = new Map();
+    const visibilityMap = new Map<string, boolean>();
     visibilityMap.set(senderId.toString(), true);
     visibilityMap.set(receiverId.toString(), true);
 
@@ -63,22 +83,20 @@ export const accessConversation = async (req: Request, res: Response) => {
       visibleTo: visibilityMap
     });
 
-    // 🚨 TRACK EVENT: Log that a conversation was initiated
     await trackEvent({
-        targetId: senderId,
-        targetModel: senderModel as any,
-        type: 'ACTIVITY',
-        activityData: {
-            action: 'CHAT_INITIATED',
-            description: `You started a conversation with a ${receiverModel}`,
-        }
-    });
+      targetId: senderId,
+      targetModel: senderModel as any,
+      type: 'ACTIVITY',
+      activityData: {
+        action: 'CHAT_INITIATED',
+        description: `You started a conversation with a ${receiverModel}`,
+      }
+    }).catch(() => { /* non-fatal */ });
 
     const populatedChat = await Conversation.findById(newConversation._id)
       .populate('participants.participantId');
 
-     res.status(201).json({ success: true, data: populatedChat });
-
+    res.status(201).json({ success: true, data: populatedChat });
   } catch (error: any) {
     console.error("Access Conversation Error:", error);
     res.status(500).json({ success: false, message: error.message });
@@ -90,20 +108,19 @@ export const getConversations = async (req: Request, res: Response): Promise<voi
     const { profileId } = req.query;
     const authenticatedUserId = getAuthUserId(req);
 
-    if (!profileId) {
-       res.status(400).json({ success: false, message: "Profile ID is required" });
+    if (!isValidId(profileId)) {
+      res.status(400).json({ success: false, message: "A valid Profile ID is required" });
+      return;
     }
 
-    const isOwner = profileId === authenticatedUserId;
-    const ownsBusiness = await Business.exists({ _id: profileId, owner: authenticatedUserId });
-
-    if (!isOwner && !ownsBusiness) {
-       res.status(403).json({ success: false, message: "Unauthorized access to this profile's chats." });
+    if (!(await ownsProfile(authenticatedUserId, profileId))) {
+      res.status(403).json({ success: false, message: "Unauthorized access to this profile's chats." });
+      return;
     }
 
     const conversations = await Conversation.find({
       "participants.participantId": profileId,
-      [`visibleTo.${profileId}`]: { $ne: false } 
+      [`visibleTo.${profileId}`]: { $ne: false }
     })
       .populate({
         path: 'participants.participantId',
@@ -121,53 +138,46 @@ export const getConversations = async (req: Request, res: Response): Promise<voi
 export const getMessages = async (req: Request, res: Response): Promise<void> => {
   try {
     const { conversationId } = req.params;
-    const { profileId } = req.query; 
+    const { profileId } = req.query;
     const authenticatedUserId = getAuthUserId(req);
 
-    if (!profileId) {
-       res.status(400).json({ success: false, message: "Profile ID is required" });
+    if (!isValidId(conversationId) || !isValidId(profileId)) {
+      res.status(400).json({ success: false, message: "Valid conversation and profile IDs are required" });
+      return;
     }
 
     const conversation = await Conversation.findById(conversationId);
-
     if (!conversation) {
-       res.status(404).json({ success: false, message: "Conversation not found" });
+      res.status(404).json({ success: false, message: "Conversation not found" });
+      return;
     }
 
-    const isParticipant = conversation?.participants.some(
+    const isParticipant = conversation.participants.some(
       p => p.participantId.toString() === profileId
     );
-
-    const isOwner = profileId === authenticatedUserId ||
-      await Business.exists({ _id: profileId, owner: authenticatedUserId });
+    const isOwner = await ownsProfile(authenticatedUserId, profileId);
 
     if (!isParticipant || !isOwner) {
-       res.status(403).json({ success: false, message: "Unauthorized access to these messages." });
+      res.status(403).json({ success: false, message: "Unauthorized access to these messages." });
+      return;
     }
 
     const messages = await Message.find({ conversation: conversationId })
       .populate('sender', 'firstName lastName businessName profilePicture businessLogo')
       .sort({ createdAt: 1 });
 
-    const currentUnread = conversation?.unreadCount.get(profileId as string) ?? 0;
-
-    if (currentUnread !== null || currentUnread  > 0) {
-      conversation?.unreadCount.set(profileId as string, 0);
-      await conversation?.save();
+    const currentUnread = conversation.unreadCount.get(profileId) ?? 0;
+    if (currentUnread > 0) {
+      conversation.unreadCount.set(profileId, 0);
+      await conversation.save();
 
       await Message.updateMany(
-        {
-          conversation: conversationId,
-          sender: { $ne: profileId },
-          status: { $ne: 'seen' }
-        },
+        { conversation: conversationId, sender: { $ne: profileId }, status: { $ne: 'seen' } },
         { $set: { status: 'seen' } }
       );
 
       const io = req.app.get('io');
-      if (io) {
-        io.to(conversationId).emit('messages_seen', { conversationId, seenBy: profileId });
-      }
+      if (io) io.to(conversationId).emit('messages_seen', { conversationId, seenBy: profileId });
     }
 
     res.status(200).json({ success: true, data: messages });
@@ -176,17 +186,35 @@ export const getMessages = async (req: Request, res: Response): Promise<void> =>
   }
 };
 
-export const sendMessage = async (req: Request, res: Response):Promise<void> => {
+export const sendMessage = async (req: Request, res: Response): Promise<void> => {
   try {
     const { conversationId, content, senderId, senderModel, media } = req.body;
     const authenticatedUserId = getAuthUserId(req);
 
-    const isUser = senderId === authenticatedUserId;
-    const ownsBusiness = await Business.exists({ _id: senderId, owner: authenticatedUserId });
+    if (!isValidId(conversationId) || !isValidId(senderId)) {
+      res.status(400).json({ success: false, message: "Valid conversation and sender IDs are required" });
+      return;
+    }
 
-    if (!isUser && !ownsBusiness) {
-       res.status(403).json({ success: false, message: "Unauthorized sender identity." });
-       return
+    // The sender must be the signed-in user, or a business they own.
+    if (!(await ownsProfile(authenticatedUserId, senderId))) {
+      res.status(403).json({ success: false, message: "Unauthorized sender identity." });
+      return;
+    }
+
+    const conversation = await Conversation.findById(conversationId);
+    if (!conversation) {
+      res.status(404).json({ success: false, message: "Chat not found" });
+      return;
+    }
+
+    // The sender must actually be in this conversation — no posting into others' chats.
+    const senderIsParticipant = conversation.participants.some(
+      p => p.participantId.toString() === senderId
+    );
+    if (!senderIsParticipant) {
+      res.status(403).json({ success: false, message: "You are not a participant in this conversation." });
+      return;
     }
 
     const newMessage = await Message.create({
@@ -198,42 +226,35 @@ export const sendMessage = async (req: Request, res: Response):Promise<void> => 
       status: 'sent'
     });
 
-    const conversation = await Conversation.findById(conversationId);
-    if (!conversation)  res.status(404).json({ message: "Chat not found" });
-
-    const receiver = conversation?.participants.find(
+    const receiver = conversation.participants.find(
       p => p.participantId.toString() !== senderId
     );
 
     if (receiver) {
       const receiverId = receiver.participantId.toString();
-      const currentUnread = conversation?.unreadCount.get(receiverId) ?? 0;
-      conversation?.unreadCount.set(receiverId, currentUnread + 1);
+      const currentUnread = conversation.unreadCount.get(receiverId) ?? 0;
+      conversation.unreadCount.set(receiverId, currentUnread + 1);
 
-      // 🚨 TRACK EVENT: Notify Receiver (Internal System Notification)
-      // This ensures even if they aren't on the chat screen, they get a global notification
       await trackEvent({
-          targetId: receiverId,
-          targetModel: receiver.participantModel as any,
-          type: 'NOTIFICATION',
-          notificationData: {
-              type: 'SOCIAL', // Messaging falls under Social
-              title: 'New Message',
-              message: content ? content.substring(0, 50) : 'Sent a photo',
-              sender: senderId,
-              senderModel: senderModel as any,
-              relatedId: conversationId,
-              modelType: 'User' // Conversations don't have a modelType in your trackEvent, usually mapped to User context
-          }
-      });
+        targetId: receiverId,
+        targetModel: receiver.participantModel as any,
+        type: 'NOTIFICATION',
+        notificationData: {
+          type: 'SOCIAL',
+          title: 'New Message',
+          message: content ? content.substring(0, 50) : 'Sent a photo',
+          sender: senderId,
+          senderModel: senderModel as any,
+          relatedId: conversationId,
+          modelType: 'User'
+        }
+      }).catch(() => { /* non-fatal */ });
     }
 
-    if (conversation) {
-      conversation.lastMessage = newMessage._id as Types.ObjectId;
-      conversation.visibleTo.set(senderId, true);
-      if (receiver) conversation.visibleTo.set(receiver.participantId.toString(), true);
-      await conversation.save();
-    }
+    conversation.lastMessage = newMessage._id as Types.ObjectId;
+    conversation.visibleTo.set(senderId, true);
+    if (receiver) conversation.visibleTo.set(receiver.participantId.toString(), true);
+    await conversation.save();
 
     const populatedMessage = await newMessage.populate('sender', 'firstName lastName businessName profilePicture businessLogo');
     const io = req.app.get('io');
@@ -244,12 +265,11 @@ export const sendMessage = async (req: Request, res: Response):Promise<void> => 
         io.to(receiverId).emit('new_notification', {
           type: 'MESSAGE',
           conversationId: conversationId,
-          unreadCount: conversation?.unreadCount.get(receiverId)
+          unreadCount: conversation.unreadCount.get(receiverId)
         });
       }
     }
     res.status(201).json({ success: true, data: populatedMessage });
-
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }

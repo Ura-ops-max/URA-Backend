@@ -56,7 +56,9 @@ const envSchema = Joi.object({
 
   // Rate Limiting
   RATE_LIMIT_WINDOW_MS: Joi.number().positive().default(900000), // 15 minutes
-  RATE_LIMIT_MAX_REQUESTS: Joi.number().positive().default(100),
+  RATE_LIMIT_MAX_REQUESTS: Joi.number().positive().default(1000),
+  LOGIN_RATE_LIMIT_MAX: Joi.number().positive().default(10), // login attempts per 15 min per IP + account
+  AUTH_RATE_LIMIT_MAX: Joi.number().positive().default(100), // other auth routes per 15 min per IP
 
   // CORS
   CORS_ORIGIN: Joi.string().default('http://localhost:5173'),
@@ -142,6 +144,8 @@ export const config = {
   rateLimit: {
     windowMs: envVars.RATE_LIMIT_WINDOW_MS,
     maxRequests: envVars.RATE_LIMIT_MAX_REQUESTS,
+    loginMax: envVars.LOGIN_RATE_LIMIT_MAX,
+    authMax: envVars.AUTH_RATE_LIMIT_MAX,
   },
 
   cors: {

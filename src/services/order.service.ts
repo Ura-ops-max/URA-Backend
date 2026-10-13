@@ -5,7 +5,7 @@ import { User } from '@/models/user-model';
 import { Business } from '@/models/business-model';
 import { trackEvent } from '@/services/track-event.service';
 import { createPaymentLink, createPaylukCustomer, updateAdditionalFee, verifyPaymentToken } from '@/services/payluk.service';
-import { createDeliveryOrder, isFezConfigured, type CreateDeliveryInput } from '@/services/fez.service';
+import { createDeliveryOrder, isFezConfigured, getDeliveryCost, type CreateDeliveryInput } from '@/services/fez.service';
 import { markOrderPaid, notifyOrderEvent, isPaidStatus } from '@/services/order-events.service';
 
 export interface ShippingAddress {
@@ -29,8 +29,9 @@ export async function checkoutFromCart(
   userAgent?: string,
   delivery?: { deliveryFee?: number; deliveryMethod?: 'delivery' | 'pickup'; escrowMode?: 'escrow' | 'normal' },
 ): Promise<CheckoutResult> {
-  // Shipping is only charged on the delivery option; direct payment sends 0.
-  const deliveryFee = Math.max(0, Number(delivery?.deliveryFee) || 0);
+  // Shipping is only charged on the delivery option. The fee is priced by the
+  // server with Fez below (never trusted from the browser).
+  let deliveryFee = 0;
   const deliveryMethod = delivery?.deliveryMethod === 'delivery' ? 'delivery' : 'pickup';
   // 'normal' → seller absorbs Payluk's fee (buyer pays clean price, Paystack-style).
   // 'escrow' → buyer pays the fee for the held/protected payment.
@@ -80,6 +81,33 @@ export async function checkoutFromCart(
   }
 
   const firstProduct: any = cart.items[0].product;
+
+  // Price delivery on the server with Fez — never trust a fee from the browser.
+  if (deliveryMethod === 'delivery') {
+    if (!shippingAddress.state) {
+      const err: any = new Error('Your delivery state is required.');
+      err.status = 400;
+      throw err;
+    }
+    if (!isFezConfigured()) {
+      const err: any = new Error('Delivery is not available right now.');
+      err.status = 503;
+      throw err;
+    }
+    const sellerBiz = await Business.findById(firstProduct?.business).select('address').lean();
+    const pickUpState = (sellerBiz as any)?.address?.state as string | undefined;
+    try {
+      const quote = await getDeliveryCost({
+        state: shippingAddress.state,
+        ...(pickUpState ? { pickUpState } : {}),
+      });
+      deliveryFee = Math.max(0, Math.round(Number(quote.totalCost) || 0));
+    } catch (e: any) {
+      const err: any = new Error(e?.message || `Delivery to ${shippingAddress.state} isn't available right now.`);
+      err.status = 422;
+      throw err;
+    }
+  }
 
   // ── Fee split ────────────────────────────────────────────────────────────
   // The escrow holds ONLY the goods subtotal — that is the seller's payout.
