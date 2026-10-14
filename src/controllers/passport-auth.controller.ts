@@ -13,7 +13,11 @@ import {
   generateVerificationCode,
   verifyToken,
 } from '@/services/token.service';
-import { sendVerificationEmail, sendPasswordResetEmail, sendResetSuccessEmail } from '@/services/email.service';
+import {
+  sendVerificationEmail,
+  sendPasswordResetEmail,
+  sendResetSuccessEmail,
+} from '@/services/email.service';
 import { asyncHandler } from '@/middleware/errorHandler';
 import { blacklistToken } from '@/services/token-blacklist.service';
 import { config } from '@/config/env.config';
@@ -30,7 +34,11 @@ export const register = asyncHandler(async (req: Request, res: Response): Promis
   const exists = await User.findOne({ email });
   if (exists) {
     throw new ValidationError('Validation failed', [
-      { field: 'email', message: 'An account with this email already exists. Please sign in.', location: 'body' },
+      {
+        field: 'email',
+        message: 'An account with this email already exists. Please sign in.',
+        location: 'body',
+      },
     ] as ErrorDetail[]);
   }
 
@@ -48,8 +56,18 @@ export const register = asyncHandler(async (req: Request, res: Response): Promis
     await session.withTransaction(async () => {
       // Create user document inside the transaction
       const [created] = await User.create(
-        [{ firstName, lastName, username, email, phone, password: hashedPassword,
-           emailVerificationToken: hash, emailVerificationExpires: expires }],
+        [
+          {
+            firstName,
+            lastName,
+            username,
+            email,
+            phone,
+            password: hashedPassword,
+            emailVerificationToken: hash,
+            emailVerificationExpires: expires,
+          },
+        ],
         { session }
       );
       user = created;
@@ -111,7 +129,7 @@ export const login = asyncHandler(
         return res.status(401).json({
           success: false,
           message: info?.message || 'Invalid credentials',
-          code: 'AUTHENTICATION_ERROR'
+          code: 'AUTHENTICATION_ERROR',
         });
       }
 
@@ -120,14 +138,14 @@ export const login = asyncHandler(
 
       // 🚨 TRACK EVENT: Successful Login
       await trackEvent({
-          targetId: user.id.toString(),
-          targetModel: 'User',
-          type: 'ACTIVITY',
-          activityData: {
-              action: 'LOGIN',
-              description: 'User logged in via Email/Password',
-              metadata: {ip: req.ip, userAgent: req.headers['user-agent']}
-          }
+        targetId: user.id.toString(),
+        targetModel: 'User',
+        type: 'ACTIVITY',
+        activityData: {
+          action: 'LOGIN',
+          description: 'User logged in via Email/Password',
+          metadata: { ip: req.ip, userAgent: req.headers['user-agent'] },
+        },
       });
 
       const accessToken = generateAccessToken({ userId: user.id, email: user.email });
@@ -143,7 +161,7 @@ export const login = asyncHandler(
       return res.status(200).json({
         success: true,
         message: 'Login successful',
-        data: { accessToken, refreshToken, user: userObj }
+        data: { accessToken, refreshToken, user: userObj },
       });
     })(req, res, next);
   }
@@ -251,13 +269,13 @@ export const verifyEmail = asyncHandler(async (req: Request, res: Response): Pro
 
   // 🚨 TRACK EVENT: Identity Verification
   await trackEvent({
-      targetId: (user._id as Types.ObjectId).toString(),
-      targetModel: 'User',
-      type: 'ACTIVITY',
-      activityData: {
-          action: 'EMAIL_VERIFIED',
-          description: 'User successfully verified their email address',
-      }
+    targetId: (user._id as Types.ObjectId).toString(),
+    targetModel: 'User',
+    type: 'ACTIVITY',
+    activityData: {
+      action: 'EMAIL_VERIFIED',
+      description: 'User successfully verified their email address',
+    },
   });
 
   res.status(HTTP_STATUS.OK).json({
@@ -271,38 +289,44 @@ export const verifyEmail = asyncHandler(async (req: Request, res: Response): Pro
  * Used by the verify page for users who just registered and aren't logged in.
  * Always responds success so it never reveals whether an email is registered.
  */
-export const resendVerificationPublic = asyncHandler(async (req: Request, res: Response): Promise<void> => {
-  const email = String(req.body?.email || '').trim().toLowerCase();
-  const ok = {
-    success: true,
-    message: 'If that email needs verifying, a new code is on its way. Check your inbox.',
-  };
-  if (!email) throw new ValidationError('Email is required');
+export const resendVerificationPublic = asyncHandler(
+  async (req: Request, res: Response): Promise<void> => {
+    const email = String(req.body?.email || '')
+      .trim()
+      .toLowerCase();
+    const ok = {
+      success: true,
+      message: 'If that email needs verifying, a new code is on its way. Check your inbox.',
+    };
+    if (!email) throw new ValidationError('Email is required');
 
-  const user = await User.findOne({ email });
-  // Silently succeed for unknown or already-verified accounts (no enumeration).
-  if (!user || user.emailVerified) {
+    const user = await User.findOne({ email });
+    // Silently succeed for unknown or already-verified accounts (no enumeration).
+    if (!user || user.emailVerified) {
+      res.status(HTTP_STATUS.OK).json(ok);
+      return;
+    }
+
+    const { code: token, hash, expires } = generateVerificationCode();
+    user.emailVerificationToken = hash;
+    user.emailVerificationExpires = expires;
+    await user.save();
+
+    sendVerificationEmail(user.email, token).catch(e =>
+      console.error('Resend verification email failed:', e)
+    );
+
     res.status(HTTP_STATUS.OK).json(ok);
-    return;
   }
-
-  const { code: token, hash, expires } = generateVerificationCode();
-  user.emailVerificationToken = hash;
-  user.emailVerificationExpires = expires;
-  await user.save();
-
-  sendVerificationEmail(user.email, token).catch((e) =>
-    console.error('Resend verification email failed:', e),
-  );
-
-  res.status(HTTP_STATUS.OK).json(ok);
-});
+);
 
 /**
  * Forgot password — email a reset link
  */
 export const forgotPassword = asyncHandler(async (req: Request, res: Response): Promise<void> => {
-  const email = String(req.body.email || '').toLowerCase().trim();
+  const email = String(req.body.email || '')
+    .toLowerCase()
+    .trim();
   if (!email) throw new ValidationError('Email is required');
 
   const user = await User.findOne({ email });
@@ -376,13 +400,13 @@ export const logout = asyncHandler(async (req: Request, res: Response): Promise<
 
   // 🚨 TRACK EVENT: Logout Audit
   await trackEvent({
-      targetId: user.id.toString(),
-      targetModel: 'User',
-      type: 'ACTIVITY',
-      activityData: {
-          action: 'LOGOUT',
-          description: 'User logged out and invalidated session',
-      }
+    targetId: user.id.toString(),
+    targetModel: 'User',
+    type: 'ACTIVITY',
+    activityData: {
+      action: 'LOGOUT',
+      description: 'User logged out and invalidated session',
+    },
   });
 
   if (accessToken) {
@@ -408,21 +432,23 @@ export const logout = asyncHandler(async (req: Request, res: Response): Promise<
   res.status(HTTP_STATUS.OK).json({ success: true, message: 'Logged out successfully' });
 });
 
-export const checkUsernameAvailability = asyncHandler(async (req: Request, res: Response): Promise<void> => {
-  const username = req.query.username as string;
-  if (!username?.trim()) {
-    res.status(HTTP_STATUS.OK).json({ available: true, message: 'Username is required.' });
-    return;
+export const checkUsernameAvailability = asyncHandler(
+  async (req: Request, res: Response): Promise<void> => {
+    const username = req.query.username as string;
+    if (!username?.trim()) {
+      res.status(HTTP_STATUS.OK).json({ available: true, message: 'Username is required.' });
+      return;
+    }
+
+    const normalizedUsername = username.trim().toLowerCase();
+    const exists = await User.findOne({ username: normalizedUsername });
+
+    res.status(HTTP_STATUS.OK).json({
+      available: !exists,
+      message: exists ? 'This username is already taken.' : 'Username is available.',
+    });
   }
-
-  const normalizedUsername = username.trim().toLowerCase();
-  const exists = await User.findOne({ username: normalizedUsername });
-
-  res.status(HTTP_STATUS.OK).json({
-    available: !exists,
-    message: exists ? 'This username is already taken.' : 'Username is available.',
-  });
-});
+);
 
 export const refresh = asyncHandler(async (req: Request, res: Response): Promise<void> => {
   const { refreshToken } = req.body;

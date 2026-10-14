@@ -4,8 +4,18 @@ import Cart from '@/models/cart-model';
 import { User } from '@/models/user-model';
 import { Business } from '@/models/business-model';
 import { trackEvent } from '@/services/track-event.service';
-import { createPaymentLink, createPaylukCustomer, updateAdditionalFee, verifyPaymentToken } from '@/services/payluk.service';
-import { createDeliveryOrder, isFezConfigured, getDeliveryCost, type CreateDeliveryInput } from '@/services/fez.service';
+import {
+  createPaymentLink,
+  createPaylukCustomer,
+  updateAdditionalFee,
+  verifyPaymentToken,
+} from '@/services/payluk.service';
+import {
+  createDeliveryOrder,
+  isFezConfigured,
+  getDeliveryCost,
+  type CreateDeliveryInput,
+} from '@/services/fez.service';
 import { markOrderPaid, notifyOrderEvent, isPaidStatus } from '@/services/order-events.service';
 
 export interface ShippingAddress {
@@ -18,7 +28,13 @@ export interface ShippingAddress {
 
 export interface CheckoutResult {
   order: { _id: unknown; orderNumber: string; totalAmount: number; status: string };
-  payluk: { paymentToken: string; escrowId: string | null; customerId: string; fee: number; payableAmount: number };
+  payluk: {
+    paymentToken: string;
+    escrowId: string | null;
+    customerId: string;
+    fee: number;
+    payableAmount: number;
+  };
 }
 
 export async function checkoutFromCart(
@@ -27,7 +43,11 @@ export async function checkoutFromCart(
   paymentMethod = 'card',
   ip?: string,
   userAgent?: string,
-  delivery?: { deliveryFee?: number; deliveryMethod?: 'delivery' | 'pickup'; escrowMode?: 'escrow' | 'normal' },
+  delivery?: {
+    deliveryFee?: number;
+    deliveryMethod?: 'delivery' | 'pickup';
+    escrowMode?: 'escrow' | 'normal';
+  }
 ): Promise<CheckoutResult> {
   // Shipping is only charged on the delivery option. The fee is priced by the
   // server with Fez below (never trusted from the browser).
@@ -54,11 +74,11 @@ export async function checkoutFromCart(
   // One order = one seller's escrow. A mixed cart would send every shop's money
   // to the first shop, so ask the buyer to check out one shop at a time.
   const shopIds = new Set(
-    cart.items.map((i: any) => String(i.product?.business ?? '')).filter(Boolean),
+    cart.items.map((i: any) => String(i.product?.business ?? '')).filter(Boolean)
   );
   if (shopIds.size > 1) {
     const err: any = new Error(
-      'Your cart has items from more than one shop. Please check out one shop at a time (remove the other items for now).',
+      'Your cart has items from more than one shop. Please check out one shop at a time (remove the other items for now).'
     );
     err.code = 'MIXED_SELLERS';
     err.status = 400;
@@ -76,7 +96,13 @@ export async function checkoutFromCart(
       err.status = 400;
       throw err;
     }
-    orderItems.push({ product: p._id, name: p.name, price: p.price, quantity: item.quantity, image: p.media?.[0] ?? null });
+    orderItems.push({
+      product: p._id,
+      name: p.name,
+      price: p.price,
+      quantity: item.quantity,
+      image: p.media?.[0] ?? null,
+    });
     totalAmount += p.price * item.quantity;
   }
 
@@ -103,7 +129,9 @@ export async function checkoutFromCart(
       });
       deliveryFee = Math.max(0, Math.round(Number(quote.totalCost) || 0));
     } catch (e: any) {
-      const err: any = new Error(e?.message || `Delivery to ${shippingAddress.state} isn't available right now.`);
+      const err: any = new Error(
+        e?.message || `Delivery to ${shippingAddress.state} isn't available right now.`
+      );
       err.status = 422;
       throw err;
     }
@@ -123,9 +151,7 @@ export async function checkoutFromCart(
   // to receive escrow funds. If they never onboarded, auto-create one on the fly
   // so an un-onboarded seller doesn't block the buyer from checking out.
   const sellerBusiness = await Business.findById(firstProduct.business).lean();
-  const seller = sellerBusiness
-    ? await User.findById((sellerBusiness as any).owner)
-    : null;
+  const seller = sellerBusiness ? await User.findById((sellerBusiness as any).owner) : null;
 
   if (!seller) {
     const err: any = new Error('This product is not available for purchase yet.');
@@ -157,21 +183,21 @@ export async function checkoutFromCart(
 
   // Create a fresh escrow holding ONLY the goods subtotal (the seller's payout).
   const escrow = await createPaymentLink({
-    amount:           totalAmount,
-    purpose:          firstProduct.name,
-    description:      firstProduct.description || firstProduct.name,
+    amount: totalAmount,
+    purpose: firstProduct.name,
+    description: firstProduct.description || firstProduct.name,
     // Normal payment: seller bears Payluk's fee → buyer pays the clean price.
     // Escrow: buyer bears it (the cost of protection).
-    whoPays:          escrowMode === 'normal' ? 'seller' : (firstProduct.whoPays || 'buyer'),
-    maxDelivery:      firstProduct.maxDelivery ?? 3,
+    whoPays: escrowMode === 'normal' ? 'seller' : firstProduct.whoPays || 'buyer',
+    maxDelivery: firstProduct.maxDelivery ?? 3,
     deliveryTimeline: firstProduct.deliveryTimeline || 'days',
-    totalQuantity:    cart.items.reduce((sum: number, i: any) => sum + i.quantity, 0),
-    imageUrl:         firstProduct.media?.[0] ?? null,
-    customerId:       sellerCustomerId!,
+    totalQuantity: cart.items.reduce((sum: number, i: any) => sum + i.quantity, 0),
+    imageUrl: firstProduct.media?.[0] ?? null,
+    customerId: sellerCustomerId!,
   });
 
   const paylukPaymentToken = escrow.paymentToken;
-  const paylukEscrowId     = escrow.escrowId;
+  const paylukEscrowId = escrow.escrowId;
 
   // Route delivery + platform cut to the platform wallet, kept out of escrow.
   // Abort if this fails so we never create an order that under-charges the buyer
@@ -226,7 +252,12 @@ export async function checkoutFromCart(
   }).catch(() => {});
 
   return {
-    order: { _id: order._id, orderNumber: order.orderNumber, totalAmount: order.totalAmount, status: order.status },
+    order: {
+      _id: order._id,
+      orderNumber: order.orderNumber,
+      totalAmount: order.totalAmount,
+      status: order.status,
+    },
     payluk: {
       paymentToken: paylukPaymentToken,
       escrowId: paylukEscrowId,
@@ -246,16 +277,27 @@ export async function checkoutFromCart(
  */
 export async function confirmPayment(
   userId: string,
-  paymentId: string,
+  paymentId: string
 ): Promise<{ alreadyConfirmed: boolean; pending?: boolean; order: Record<string, unknown> }> {
-  const pending = await Order.findOne({ user: userId, paymentStatus: 'pending' }).sort({ createdAt: -1 });
+  const pending = await Order.findOne({ user: userId, paymentStatus: 'pending' }).sort({
+    createdAt: -1,
+  });
 
   if (!pending) {
-    const paid = await Order.findOne({ user: userId, paymentStatus: 'paid' }).sort({ createdAt: -1 });
+    const paid = await Order.findOne({ user: userId, paymentStatus: 'paid' }).sort({
+      createdAt: -1,
+    });
     if (paid) {
       return {
         alreadyConfirmed: true,
-        order: { _id: paid._id, orderNumber: paid.orderNumber, totalAmount: paid.totalAmount, status: paid.status, paymentStatus: paid.paymentStatus, business: paid.business },
+        order: {
+          _id: paid._id,
+          orderNumber: paid.orderNumber,
+          totalAmount: paid.totalAmount,
+          status: paid.status,
+          paymentStatus: paid.paymentStatus,
+          business: paid.business,
+        },
       };
     }
     const err: any = new Error('No pending order found');
@@ -268,7 +310,10 @@ export async function confirmPayment(
     if (pending.paylukPaymentToken) {
       const result = await verifyPaymentToken(pending.paylukPaymentToken);
       verified = isPaidStatus(result.status);
-      if (!verified) console.warn(`[confirmPayment] Payluk status "${result.status}" for ${pending.orderNumber} — not paid yet`);
+      if (!verified)
+        console.warn(
+          `[confirmPayment] Payluk status "${result.status}" for ${pending.orderNumber} — not paid yet`
+        );
     }
   } catch (e) {
     console.error('[confirmPayment] Payluk verify failed:', (e as Error).message);
@@ -278,19 +323,36 @@ export async function confirmPayment(
     return {
       alreadyConfirmed: false,
       pending: true,
-      order: { _id: pending._id, orderNumber: pending.orderNumber, totalAmount: pending.totalAmount, status: pending.status, paymentStatus: pending.paymentStatus, business: pending.business },
+      order: {
+        _id: pending._id,
+        orderNumber: pending.orderNumber,
+        totalAmount: pending.totalAmount,
+        status: pending.status,
+        paymentStatus: pending.paymentStatus,
+        business: pending.business,
+      },
     };
   }
 
-  const updated = (await markOrderPaid(pending._id, paymentId)) ?? (await Order.findById(pending._id));
+  const updated =
+    (await markOrderPaid(pending._id, paymentId)) ?? (await Order.findById(pending._id));
   return {
     alreadyConfirmed: false,
-    order: { _id: updated!._id, orderNumber: updated!.orderNumber, totalAmount: updated!.totalAmount, status: updated!.status, paymentStatus: updated!.paymentStatus, business: updated!.business },
+    order: {
+      _id: updated!._id,
+      orderNumber: updated!.orderNumber,
+      totalAmount: updated!.totalAmount,
+      status: updated!.status,
+      paymentStatus: updated!.paymentStatus,
+      business: updated!.business,
+    },
   };
 }
 
 export const getOrdersForUser = (userId: string) =>
-  Order.find({ user: userId }).sort({ createdAt: -1 }).populate('items.product', 'name media price');
+  Order.find({ user: userId })
+    .sort({ createdAt: -1 })
+    .populate('items.product', 'name media price');
 
 /** Businesses owned by this user (a seller can own more than one). */
 const businessIdsOwnedBy = async (userId: string) =>
@@ -298,16 +360,30 @@ const businessIdsOwnedBy = async (userId: string) =>
 
 /** Buyer OR the selling business's owner may view an order. */
 export const getOrderByIdForUser = async (orderId: string, userId: string) => {
-  if (!mongoose.isValidObjectId(orderId)) { const e: any = new Error('Order not found'); e.status = 404; throw e; }
+  if (!mongoose.isValidObjectId(orderId)) {
+    const e: any = new Error('Order not found');
+    e.status = 404;
+    throw e;
+  }
   const order = await Order.findById(orderId)
     .populate('items.product', 'name media price')
     .populate('business', 'businessName slug businessLogo address contact')
     .populate('user', 'firstName lastName email');
-  if (!order) { const e: any = new Error('Order not found'); e.status = 404; throw e; }
+  if (!order) {
+    const e: any = new Error('Order not found');
+    e.status = 404;
+    throw e;
+  }
   const buyerId = String((order.user as any)?._id ?? order.user);
   const isBuyer = buyerId === userId;
-  const isSeller = (await businessIdsOwnedBy(userId)).includes(String((order.business as any)?._id ?? order.business));
-  if (!isBuyer && !isSeller) { const e: any = new Error('Unauthorized'); e.status = 403; throw e; }
+  const isSeller = (await businessIdsOwnedBy(userId)).includes(
+    String((order.business as any)?._id ?? order.business)
+  );
+  if (!isBuyer && !isSeller) {
+    const e: any = new Error('Unauthorized');
+    e.status = 403;
+    throw e;
+  }
   return { order, role: isBuyer ? 'buyer' : 'seller' };
 };
 
@@ -330,23 +406,42 @@ export const getReceivedOrdersForSeller = async (userId: string) => {
 export const markOrderReady = async (
   orderId: string,
   userId: string,
-  mode?: 'pickup' | 'self_delivery',
+  mode?: 'pickup' | 'self_delivery'
 ) => {
-  if (!mongoose.isValidObjectId(orderId)) { const e: any = new Error('Order not found'); e.status = 404; throw e; }
-  const order = await Order.findById(orderId);
-  if (!order) { const e: any = new Error('Order not found'); e.status = 404; throw e; }
-  if (!(await businessIdsOwnedBy(userId)).includes(String(order.business))) {
-    const e: any = new Error('Only the seller can update this order'); e.status = 403; throw e;
+  if (!mongoose.isValidObjectId(orderId)) {
+    const e: any = new Error('Order not found');
+    e.status = 404;
+    throw e;
   }
-  if (order.paymentStatus !== 'paid') { const e: any = new Error('This order has not been paid yet'); e.status = 400; throw e; }
+  const order = await Order.findById(orderId);
+  if (!order) {
+    const e: any = new Error('Order not found');
+    e.status = 404;
+    throw e;
+  }
+  if (!(await businessIdsOwnedBy(userId)).includes(String(order.business))) {
+    const e: any = new Error('Only the seller can update this order');
+    e.status = 403;
+    throw e;
+  }
+  if (order.paymentStatus !== 'paid') {
+    const e: any = new Error('This order has not been paid yet');
+    e.status = 400;
+    throw e;
+  }
   if (order.status !== OrderStatus.PROCESSING) {
-    const e: any = new Error(`This order is already ${order.status}`); e.status = 409; throw e;
+    const e: any = new Error(`This order is already ${order.status}`);
+    e.status = 409;
+    throw e;
   }
 
   if (order.deliveryMethod === 'delivery') {
     if (!isFezConfigured()) {
-      const e: any = new Error('Delivery booking is not set up yet. Please arrange delivery yourself.');
-      e.status = 503; throw e;
+      const e: any = new Error(
+        'Delivery booking is not set up yet. Please arrange delivery yourself.'
+      );
+      e.status = 503;
+      throw e;
     }
     const [buyer, business] = await Promise.all([
       User.findById(order.user).select('firstName lastName email'),
@@ -356,12 +451,18 @@ export const markOrderReady = async (
     try {
       const delivery: CreateDeliveryInput = {
         uniqueID: order.orderNumber,
-        recipientName: `${buyer?.firstName ?? ''} ${buyer?.lastName ?? ''}`.trim() || 'URA customer',
+        recipientName:
+          `${buyer?.firstName ?? ''} ${buyer?.lastName ?? ''}`.trim() || 'URA customer',
         recipientPhone: order.shippingAddress.phone,
-        recipientAddress: [order.shippingAddress.fullAddress, order.shippingAddress.city].filter(Boolean).join(', '),
+        recipientAddress: [order.shippingAddress.fullAddress, order.shippingAddress.city]
+          .filter(Boolean)
+          .join(', '),
         recipientState: order.shippingAddress.state || business?.address?.state || 'FCT',
         valueOfItem: subtotal,
-        itemDescription: order.items.map((i) => `${i.name} x${i.quantity}`).join(', ').slice(0, 200),
+        itemDescription: order.items
+          .map(i => `${i.name} x${i.quantity}`)
+          .join(', ')
+          .slice(0, 200),
       };
       if (buyer?.email) delivery.recipientEmail = buyer.email;
       if (business?.address?.state) delivery.pickUpState = business.address.state;
@@ -372,8 +473,11 @@ export const markOrderReady = async (
     } catch (err) {
       console.error('[markOrderReady] Fez booking failed:', (err as Error).message);
       notifyOrderEvent(order, 'DELIVERY_BOOKING_FAILED').catch(() => {});
-      const e: any = new Error('Could not book a delivery rider right now. Please try again shortly.');
-      e.status = 502; throw e;
+      const e: any = new Error(
+        'Could not book a delivery rider right now. Please try again shortly.'
+      );
+      e.status = 502;
+      throw e;
     }
     order.status = OrderStatus.SHIPPED;
     await order.save();

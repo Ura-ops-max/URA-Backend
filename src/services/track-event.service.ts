@@ -19,9 +19,27 @@ type NotificationData = {
 };
 
 export type TrackEventParams =
-    | { targetId: string; targetModel: string; type: 'ACTIVITY'; activityData: ActivityData; notificationData?: never }
-    | { targetId: string; targetModel: string; type: 'NOTIFICATION'; notificationData: NotificationData; activityData?: never }
-    | { targetId: string; targetModel: string; type: 'BOTH'; activityData: ActivityData; notificationData: NotificationData };
+  | {
+      targetId: string;
+      targetModel: string;
+      type: 'ACTIVITY';
+      activityData: ActivityData;
+      notificationData?: never;
+    }
+  | {
+      targetId: string;
+      targetModel: string;
+      type: 'NOTIFICATION';
+      notificationData: NotificationData;
+      activityData?: never;
+    }
+  | {
+      targetId: string;
+      targetModel: string;
+      type: 'BOTH';
+      activityData: ActivityData;
+      notificationData: NotificationData;
+    };
 
 export const trackEvent = async (params: TrackEventParams) => {
   const { targetId, targetModel, type } = params;
@@ -31,7 +49,7 @@ export const trackEvent = async (params: TrackEventParams) => {
       user: targetId,
       action: params.activityData.action,
       description: params.activityData.description,
-      metadata: params.activityData.metadata
+      metadata: params.activityData.metadata,
     });
   }
 
@@ -39,7 +57,7 @@ export const trackEvent = async (params: TrackEventParams) => {
     const newNotification = await Notification.create({
       recipient: targetId,
       recipientModel: targetModel,
-      ...params.notificationData
+      ...params.notificationData,
     });
 
     if (socketService.isOnline(targetId)) {

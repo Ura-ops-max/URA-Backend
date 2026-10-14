@@ -21,7 +21,7 @@ async function embed(type: 'text' | 'image', input: string): Promise<number[] | 
       const { data } = await axios.post(
         EMBED_URL,
         { type, input },
-        { timeout: 20_000, headers: { 'content-type': 'application/json' } },
+        { timeout: 20_000, headers: { 'content-type': 'application/json' } }
       );
       const vec = data?.embedding;
       if (Array.isArray(vec) && vec.length) return vec as number[];
@@ -29,7 +29,7 @@ async function embed(type: 'text' | 'image', input: string): Promise<number[] | 
     } catch (err) {
       const msg = (err as Error).message;
       console.error(`[ai-embed] ${type} embed attempt ${i}/${attempts} failed:`, msg);
-      if (i < attempts) await new Promise((r) => setTimeout(r, 1500 * i));
+      if (i < attempts) await new Promise(r => setTimeout(r, 1500 * i));
     }
   }
   return null;

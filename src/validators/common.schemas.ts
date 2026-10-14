@@ -31,11 +31,12 @@ export const nameSchema = Joi.string()
     'any.required': 'Name is required',
   });
 
-  export const phoneSchema = Joi.string()
+export const phoneSchema = Joi.string()
   .regex(/^0[789][01]\d{8}$/, 'Invalid Nigerian phone number')
   .required()
   .messages({
-    'string.pattern.base': 'Phone number must be a valid Nigerian number starting with 070, 080, or 090',
+    'string.pattern.base':
+      'Phone number must be a valid Nigerian number starting with 070, 080, or 090',
     'any.required': 'Phone number is required',
   });
 

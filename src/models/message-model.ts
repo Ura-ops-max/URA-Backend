@@ -16,7 +16,7 @@ interface IMedia {
  */
 interface IReaction {
   user: Types.ObjectId; // Always a User ID reacting
-  emoji: string;        // The emoji string (e.g., "🔥")
+  emoji: string; // The emoji string (e.g., "🔥")
 }
 
 /**
@@ -38,29 +38,29 @@ export interface IMessage extends Document {
 const messageSchema = new Schema<IMessage>(
   {
     // The chat room this message belongs to
-    conversation: { 
-      type: Schema.Types.ObjectId, 
-      ref: 'Conversation', 
-      required: true, 
-      index: true 
+    conversation: {
+      type: Schema.Types.ObjectId,
+      ref: 'Conversation',
+      required: true,
+      index: true,
     },
 
-    // Sender logic: refPath allows Mongoose to look in 'User' or 'Business' 
-    sender: { 
-      type: Schema.Types.ObjectId, 
-      required: true, 
-      refPath: 'senderModel' 
+    // Sender logic: refPath allows Mongoose to look in 'User' or 'Business'
+    sender: {
+      type: Schema.Types.ObjectId,
+      required: true,
+      refPath: 'senderModel',
     },
-    senderModel: { 
-      type: String, 
-      required: true, 
-      enum: ['User', 'Business'] 
+    senderModel: {
+      type: String,
+      required: true,
+      enum: ['User', 'Business'],
     },
 
     // Message Body
-    content: { 
-      type: String, 
-      trim: true 
+    content: {
+      type: String,
+      trim: true,
     },
 
     // Media attachment
@@ -79,22 +79,24 @@ const messageSchema = new Schema<IMessage>(
     ],
 
     // Message status for WhatsApp-style ticks
-    status: { 
-      type: String, 
-      enum: ['sent', 'delivered', 'read'], 
-      default: 'sent' 
+    status: {
+      type: String,
+      enum: ['sent', 'delivered', 'read'],
+      default: 'sent',
     },
 
     // List of users who have viewed this message
-    readBy: [{ 
-      type: Schema.Types.ObjectId, 
-      ref: 'User' 
-    }],
+    readBy: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: 'User',
+      },
+    ],
   },
-  { 
+  {
     timestamps: true, // Automatically handles createdAt and updatedAt
     toJSON: { virtuals: true },
-    toObject: { virtuals: true }
+    toObject: { virtuals: true },
   }
 );
 

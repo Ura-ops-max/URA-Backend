@@ -123,7 +123,7 @@ export const sendOrderEmail = async (
   email: string,
   title: string,
   message: string,
-  orderUrl: string,
+  orderUrl: string
 ): Promise<void> => {
   try {
     const info = await transporter.sendMail({

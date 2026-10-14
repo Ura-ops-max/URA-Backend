@@ -6,7 +6,7 @@ export interface IUser extends Document {
   lastName: string;
   username: string;
   email: string;
-  password?: string; 
+  password?: string;
   phone: string;
   paylukCustomerId?: string;
   bio?: string;
@@ -16,7 +16,7 @@ export interface IUser extends Document {
   profilePicture?: string;
   coverPicture?: string;
   isBusinessOwner?: boolean;
-  businessName?: string; 
+  businessName?: string;
   emailVerified?: boolean;
   emailVerificationToken?: string;
   emailVerificationExpires?: Date;
@@ -106,7 +106,5 @@ userSchema.pre<IUser>('save', function (next) {
 
   next();
 });
-
-
 
 export const User = model<IUser>('User', userSchema);

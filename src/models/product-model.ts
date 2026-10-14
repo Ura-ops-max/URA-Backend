@@ -1,62 +1,62 @@
 import { Schema, model, Document, Types } from 'mongoose';
 
 export interface IProduct extends Document {
-    business: Types.ObjectId;
-    name: string;
-    category: string;
-    description: string;
-    price: number;
-    stock: number;
-    size?: string;
-    media: string[];
-    likes: Types.ObjectId[];
-    averageRating: number;
-    totalReviews: number;
+  business: Types.ObjectId;
+  name: string;
+  category: string;
+  description: string;
+  price: number;
+  stock: number;
+  size?: string;
+  media: string[];
+  likes: Types.ObjectId[];
+  averageRating: number;
+  totalReviews: number;
 
-    // Image-search: CLIP embedding of the product's first image (1024 dims).
-    // Populated on create/update; queried via Atlas $vectorSearch.
-    imageEmbedding?: number[];
+  // Image-search: CLIP embedding of the product's first image (1024 dims).
+  // Populated on create/update; queried via Atlas $vectorSearch.
+  imageEmbedding?: number[];
 
-// ── Payluk Escrow ──────────────────────────────
-    paylukEscrowId:     string | null;
-    paylukPaymentToken: string | null;
-    createdAt: Date;
-    updatedAt: Date;
+  // ── Payluk Escrow ──────────────────────────────
+  paylukEscrowId: string | null;
+  paylukPaymentToken: string | null;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export const productSchema = new Schema<IProduct>(
-    {
-        business: { type: Schema.Types.ObjectId, ref: 'Business', required: true },
-        name: { type: String, required: true, trim: true },
-        category: { type: String, default: 'General', index: true },
-        description: { type: String, required: true },
-        price: { type: Number, required: true },
-        stock: { type: Number, required: true, default: 0 },
-        size: { type: String },
-        media: [{ type: String, required: true }],
-        likes: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+  {
+    business: { type: Schema.Types.ObjectId, ref: 'Business', required: true },
+    name: { type: String, required: true, trim: true },
+    category: { type: String, default: 'General', index: true },
+    description: { type: String, required: true },
+    price: { type: Number, required: true },
+    stock: { type: Number, required: true, default: 0 },
+    size: { type: String },
+    media: [{ type: String, required: true }],
+    likes: [{ type: Schema.Types.ObjectId, ref: 'User' }],
 
-        // Vector for Atlas image search (select:false — never sent to clients).
-        imageEmbedding: { type: [Number], select: false, default: undefined },
+    // Vector for Atlas image search (select:false — never sent to clients).
+    imageEmbedding: { type: [Number], select: false, default: undefined },
 
-        // RATING FIELDS
-        averageRating: {
-            type: Number,
-            default: 0,
-            min: 0,
-            max: 5,
-            index: true, // Crucial for search performance
-        },
-        totalReviews: {
-            type: Number,
-            default: 0,
-        },
-
-        // PAYLUK FIELDS
-        paylukEscrowId:     { type: String, default: null },
-        paylukPaymentToken: { type: String, default: null },
+    // RATING FIELDS
+    averageRating: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 5,
+      index: true, // Crucial for search performance
     },
-    { timestamps: true }
+    totalReviews: {
+      type: Number,
+      default: 0,
+    },
+
+    // PAYLUK FIELDS
+    paylukEscrowId: { type: String, default: null },
+    paylukPaymentToken: { type: String, default: null },
+  },
+  { timestamps: true }
 );
 
 // Optional: Add a text index for name and description to improve the 'q' search logic

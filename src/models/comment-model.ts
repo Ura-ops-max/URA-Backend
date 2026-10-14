@@ -21,27 +21,27 @@ export interface IComment extends Document {
 const commentSchema = new Schema<IComment>(
   {
     content: { type: String, required: true },
-    author: { 
-      type: Schema.Types.ObjectId, 
-      required: true, 
-      refPath: 'authorType' 
+    author: {
+      type: Schema.Types.ObjectId,
+      required: true,
+      refPath: 'authorType',
     },
-    authorType: { 
-      type: String, 
-      required: true, 
-      enum: ['User', 'Business'] 
+    authorType: {
+      type: String,
+      required: true,
+      enum: ['User', 'Business'],
     },
     postId: { type: Schema.Types.ObjectId, ref: 'Post', required: true, index: true },
     likes: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     parentId: { type: Schema.Types.ObjectId, ref: 'Comment', default: null },
-    
+
     // Mentions logic
     mentions: [
       {
         id: { type: Schema.Types.ObjectId, refPath: 'mentions.entityType' },
         entityType: { type: String, enum: ['User', 'Business'] },
-        displayName: { type: String } // Stored for quick rendering without deep populates
-      }
+        displayName: { type: String }, // Stored for quick rendering without deep populates
+      },
     ],
   },
   { timestamps: true }

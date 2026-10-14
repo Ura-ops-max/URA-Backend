@@ -25,7 +25,9 @@ const envSchema = Joi.object({
   MICROSOFT_CLIENT_ID: Joi.string().allow('').default(''),
   MICROSOFT_CLIENT_SECRET: Joi.string().allow('').default(''),
   MICROSOFT_TENANT: Joi.string().allow('').default('common'),
-  MICROSOFT_CALLBACK_URL: Joi.string().uri().default('http://localhost:8000/api/v1/auth/microsoft/callback'),
+  MICROSOFT_CALLBACK_URL: Joi.string()
+    .uri()
+    .default('http://localhost:8000/api/v1/auth/microsoft/callback'),
 
   // OAuth - Apple
   APPLE_CLIENT_ID: Joi.string().required(),

@@ -17,10 +17,7 @@ function verifySignature(body: unknown, signatureHeader: string): boolean {
     console.error('[webhook] PAYLUK_WEBHOOK_SECRET is not configured');
     return false;
   }
-  const computed = crypto
-    .createHmac('sha512', secret)
-    .update(JSON.stringify(body))
-    .digest('hex');
+  const computed = crypto.createHmac('sha512', secret).update(JSON.stringify(body)).digest('hex');
   // Constant-time comparison to prevent timing attacks
   return crypto.timingSafeEqual(Buffer.from(computed), Buffer.from(signatureHeader));
 }
@@ -42,7 +39,8 @@ router.post('/payluk', async (req, res) => {
   }
 
   // Both buffers must be the same length for timingSafeEqual
-  if (signatureHeader.length !== 128) { // sha512 hex is always 128 chars
+  if (signatureHeader.length !== 128) {
+    // sha512 hex is always 128 chars
     console.warn('[webhook] Malformed signature header (wrong length)');
     return res.status(401).json({ ok: false, message: 'Invalid signature' });
   }
@@ -111,8 +109,7 @@ async function handlePaymentReceived(data: Record<string, any>) {
     return;
   }
 
-  const transactionRef: string =
-    data?.paymentDetails?.reference || data?.reference || paymentToken;
+  const transactionRef: string = data?.paymentDetails?.reference || data?.reference || paymentToken;
 
   const updated = await markOrderPaid(order._id, transactionRef, data);
   if (!updated) console.log('[webhook] Order already marked paid — skipping');
@@ -128,7 +125,7 @@ async function handleEscrowCompleted(data: Record<string, any>) {
   const order = await Order.findOneAndUpdate(
     { paylukPaymentToken: paymentToken, status: { $ne: OrderStatus.DELIVERED } },
     { $set: { status: OrderStatus.DELIVERED } },
-    { new: true },
+    { new: true }
   );
   if (!order) return;
   notifyOrderEvent(order, 'DELIVERED').catch(() => {});
@@ -143,7 +140,7 @@ async function handleEscrowRefunded(data: Record<string, any>) {
 
   const before = await Order.findOneAndUpdate(
     { paylukPaymentToken: paymentToken, status: { $ne: OrderStatus.REFUNDED } },
-    { $set: { status: OrderStatus.REFUNDED, paymentStatus: 'failed' } },
+    { $set: { status: OrderStatus.REFUNDED, paymentStatus: 'failed' } }
   ); // returns the order as it was BEFORE this update
   if (!before) return;
 

@@ -18,7 +18,10 @@ import { asyncHandler } from '@/middleware/errorHandler';
  *    is refused, so the secret key can't be used against arbitrary endpoints.
  */
 
-const API_BASE = (process.env.PAYLUK_API_BASE || 'https://staging.api.payluk.ng').replace(/\/$/, '');
+const API_BASE = (process.env.PAYLUK_API_BASE || 'https://staging.api.payluk.ng').replace(
+  /\/$/,
+  ''
+);
 const SECRET = process.env.PAYLUK_SECRET_KEY || '';
 
 // Payluk's REST paths are versioned under /v1.
@@ -35,7 +38,7 @@ const ALLOWED_PATHS: RegExp[] = [
   /^\/escrow\/(claim-funds|confirm-payment|submit-dispute)\/[^/]+\/?$/,
 ];
 
-const isAllowed = (path: string): boolean => ALLOWED_PATHS.some((re) => re.test(path));
+const isAllowed = (path: string): boolean => ALLOWED_PATHS.some(re => re.test(path));
 
 export const paylukProxy = asyncHandler(async (req: Request, res: Response): Promise<void> => {
   // When mounted with router.use('/payluk', ...), req.path is the remainder,
@@ -80,7 +83,10 @@ export const paylukProxy = asyncHandler(async (req: Request, res: Response): Pro
   } catch (err) {
     const axiosErr = err as AxiosError;
     const status = axiosErr.response?.status ?? 502;
-    console.error(`❌ [PaylukProxy] ${req.method} ${targetPath} → ${status}`, axiosErr.response?.data);
+    console.error(
+      `❌ [PaylukProxy] ${req.method} ${targetPath} → ${status}`,
+      axiosErr.response?.data
+    );
     res
       .status(status)
       .json(axiosErr.response?.data ?? { success: false, message: 'Payluk request failed' });

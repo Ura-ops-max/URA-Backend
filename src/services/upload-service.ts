@@ -65,7 +65,11 @@ export const uploadToCloud = async (
   fileBuffer: Buffer,
   options: { folder?: string; contentType?: string; fileName?: string } = {}
 ): Promise<string> => {
-  const { folder = 'profiles', contentType = 'application/octet-stream', fileName = 'file' } = options;
+  const {
+    folder = 'profiles',
+    contentType = 'application/octet-stream',
+    fileName = 'file',
+  } = options;
   const key = buildObjectKey(folder, fileName);
 
   await s3.send(

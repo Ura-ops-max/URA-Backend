@@ -29,10 +29,10 @@ const reviewSchema = new Schema<IReview>(
     likes: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     dislikes: [{ type: Schema.Types.ObjectId, ref: 'User' }],
   },
-  { 
+  {
     timestamps: true,
     toJSON: { virtuals: true },
-    toObject: { virtuals: true }
+    toObject: { virtuals: true },
   }
 );
 
@@ -61,21 +61,24 @@ reviewSchema.statics.calculateReviewStats = async function (itemId) {
     },
   ]);
 
-  const updateData = stats.length > 0 ? {
-    totalReviews: stats[0].totalReviews,
-    averageRating: Math.round(stats[0].averageRating * 10) / 10,
-    reviewDistribution: {
-      5: stats[0].fiveStar,
-      4: stats[0].fourStar,
-      3: stats[0].threeStar,
-      2: stats[0].twoStar,
-      1: stats[0].oneStar,
-    }
-  } : {
-    totalReviews: 0,
-    averageRating: 0,
-    reviewDistribution: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 }
-  };
+  const updateData =
+    stats.length > 0
+      ? {
+          totalReviews: stats[0].totalReviews,
+          averageRating: Math.round(stats[0].averageRating * 10) / 10,
+          reviewDistribution: {
+            5: stats[0].fiveStar,
+            4: stats[0].fourStar,
+            3: stats[0].threeStar,
+            2: stats[0].twoStar,
+            1: stats[0].oneStar,
+          },
+        }
+      : {
+          totalReviews: 0,
+          averageRating: 0,
+          reviewDistribution: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 },
+        };
 
   // Find the model dynamically (Business or Product) and update
   const review = await this.findOne({ reviewedItem: itemId });
@@ -89,7 +92,7 @@ reviewSchema.post('save', async function () {
   await (this.constructor as any).calculateReviewStats(this.reviewedItem);
 });
 
-reviewSchema.post('findOneAndDelete', async function (doc) {
+reviewSchema.post('findOneAndDelete', async doc => {
   if (doc) {
     await (model('Review') as any).calculateReviewStats(doc.reviewedItem);
   }

@@ -8,7 +8,8 @@ export const validateRequest = (schema: {
   params?: Joi.ObjectSchema;
 }) => {
   return (req: Request, _res: Response, next: NextFunction): void => {
-    const errors: Array<{ field: string; message: string; location: 'body' | 'query' | 'params' }> = [];
+    const errors: Array<{ field: string; message: string; location: 'body' | 'query' | 'params' }> =
+      [];
 
     // Validate request body
     if (schema.body) {

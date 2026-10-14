@@ -1,4 +1,3 @@
-
 import 'dotenv/config';
 import mongoose from 'mongoose';
 import { Product } from '@/models/product-model';
@@ -16,7 +15,10 @@ async function main() {
   console.log(`   AI_EMBED_URL = ${process.env.AI_EMBED_URL}`);
 
   const uri = process.env.MONGODB_URI;
-  if (!uri) { console.log('   ✗ MONGODB_URI not set. Aborting.\n'); process.exit(1); }
+  if (!uri) {
+    console.log('   ✗ MONGODB_URI not set. Aborting.\n');
+    process.exit(1);
+  }
   await mongoose.connect(uri, process.env.DB_NAME ? { dbName: process.env.DB_NAME } : {});
   console.log('   Connected to MongoDB.');
 
@@ -33,7 +35,9 @@ async function main() {
 
   const vec = await embedImageUrl(sampleUrl);
   if (!vec) {
-    console.log('   ✗ Embed call FAILED (returned null). The Lambda is unreachable or rejected the image.');
+    console.log(
+      '   ✗ Embed call FAILED (returned null). The Lambda is unreachable or rejected the image.'
+    );
     console.log('     → Fix the embed endpoint first; nothing downstream can work.\n');
     process.exit(1);
   }
@@ -42,7 +46,9 @@ async function main() {
   // ── 2. Embedding coverage ─────────────────────────────────────────
   console.log('2) Product embedding coverage');
   const total = await Product.countDocuments({});
-  const withEmbedding = await Product.countDocuments({ imageEmbedding: { $exists: true, $ne: null } });
+  const withEmbedding = await Product.countDocuments({
+    imageEmbedding: { $exists: true, $ne: null },
+  });
   console.log(`   Products total:            ${total}`);
   console.log(`   With imageEmbedding:       ${withEmbedding}`);
   if (withEmbedding === 0) {
@@ -50,7 +56,9 @@ async function main() {
     console.log('        npx ts-node src/scripts/backfill-image-embeddings.ts');
     console.log('     Image search returns nothing until this is done.\n');
   } else if (withEmbedding < total) {
-    console.log(`   ⚠ ${total - withEmbedding} product(s) not yet embedded — run the backfill to cover them.\n`);
+    console.log(
+      `   ⚠ ${total - withEmbedding} product(s) not yet embedded — run the backfill to cover them.\n`
+    );
   } else {
     console.log('   ✓ All products are embedded.\n');
   }
@@ -79,7 +87,9 @@ async function main() {
     }
   } catch (err: any) {
     console.log('   ✗ Vector search FAILED:', err?.message || err);
-    console.log('     Likely the Atlas index "product_image_index" does not exist or is not ACTIVE.');
+    console.log(
+      '     Likely the Atlas index "product_image_index" does not exist or is not ACTIVE.'
+    );
     console.log('     → In Atlas: Search → Create Search Index → JSON editor → vectorSearch,');
     console.log('       field "imageEmbedding", 1024 dimensions, similarity "cosine".');
   }
@@ -89,4 +99,7 @@ async function main() {
   process.exit(0);
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch(err => {
+  console.error(err);
+  process.exit(1);
+});

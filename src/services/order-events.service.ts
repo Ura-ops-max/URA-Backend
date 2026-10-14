@@ -29,9 +29,11 @@ const naira = (n: number) => `₦${Number(n || 0).toLocaleString('en-NG')}`;
 
 /** Which Payluk escrow statuses mean "the buyer's money has arrived". */
 export const isPaidStatus = (status?: string): boolean => {
-  const allowed = (process.env.PAYLUK_PAID_STATUSES || 'ongoing,paid,success,successful,completed,funded')
+  const allowed = (
+    process.env.PAYLUK_PAID_STATUSES || 'ongoing,paid,success,successful,completed,funded'
+  )
     .split(',')
-    .map((s) => s.trim().toLowerCase())
+    .map(s => s.trim().toLowerCase())
     .filter(Boolean);
   return !!status && allowed.includes(String(status).toLowerCase());
 };
@@ -45,7 +47,7 @@ export const isPaidStatus = (status?: string): boolean => {
 export async function markOrderPaid(
   orderId: unknown,
   transactionRef: string,
-  details?: unknown,
+  details?: unknown
 ): Promise<IOrder | null> {
   const order = await Order.findOneAndUpdate(
     { _id: orderId, paymentStatus: 'pending' },
@@ -57,7 +59,7 @@ export async function markOrderPaid(
         payment: { provider: 'payluk', transactionRef, details },
       },
     },
-    { new: true },
+    { new: true }
   );
   if (!order) return null; // already handled
 
@@ -67,7 +69,7 @@ export async function markOrderPaid(
   for (const item of order.items) {
     const res = await Product.updateOne(
       { _id: item.product, stock: { $gte: item.quantity } },
-      { $inc: { stock: -item.quantity } },
+      { $inc: { stock: -item.quantity } }
     );
     if (res.modifiedCount === 0) {
       shortItems.push(item.name);
@@ -80,8 +82,10 @@ export async function markOrderPaid(
   notifyOrderEvent(
     order,
     'PAID',
-    shortItems.length ? { note: `Stock was too low for: ${shortItems.join(', ')}. Please contact the buyer.` } : {},
-  ).catch((e) => console.error('[order-events] PAID notify failed:', e));
+    shortItems.length
+      ? { note: `Stock was too low for: ${shortItems.join(', ')}. Please contact the buyer.` }
+      : {}
+  ).catch(e => console.error('[order-events] PAID notify failed:', e));
 
   return order;
 }
@@ -92,7 +96,9 @@ async function getParties(order: IOrder) {
     User.findById(order.user).select('firstName lastName email phone'),
     Business.findById(order.business).select('businessName owner address contact slug'),
   ]);
-  const seller = business ? await User.findById(business.owner).select('firstName lastName email') : null;
+  const seller = business
+    ? await User.findById(business.owner).select('firstName lastName email')
+    : null;
   return { buyer, business, seller };
 }
 
@@ -100,7 +106,7 @@ async function getParties(order: IOrder) {
 export async function notifyOrderEvent(
   order: IOrder,
   event: OrderEvent,
-  extra: { note?: string } = {},
+  extra: { note?: string } = {}
 ): Promise<void> {
   const { buyer, business, seller } = await getParties(order);
   if (!buyer || !business || !seller) {
@@ -110,7 +116,7 @@ export async function notifyOrderEvent(
 
   const shopName = business.businessName;
   const buyerName = `${buyer.firstName ?? ''} ${buyer.lastName ?? ''}`.trim() || 'A customer';
-  const itemsText = order.items.map((i) => `${i.name} ×${i.quantity}`).join(', ');
+  const itemsText = order.items.map(i => `${i.name} ×${i.quantity}`).join(', ');
   const total = naira(order.totalAmount);
   // What the seller actually receives: the items only. Delivery (Fez) and any
   // platform fee are paid outside the seller's escrow.
@@ -121,40 +127,78 @@ export async function notifyOrderEvent(
 
   const copy: Record<OrderEvent, { buyer?: [string, string]; seller?: [string, string] }> = {
     PAID: {
-      buyer: ['Payment confirmed', `Your order ${order.orderNumber} from ${shopName} is paid (${total}). The seller is preparing it.`],
+      buyer: [
+        'Payment confirmed',
+        `Your order ${order.orderNumber} from ${shopName} is paid (${total}). The seller is preparing it.`,
+      ],
       seller: [
         'New paid order',
         `${buyerName} paid for ${itemsText}. You'll receive ${itemsTotal} for the items when the buyer confirms they got them${
-          order.deliveryMethod === 'delivery' ? ' (delivery is paid to Fez separately). Tap "Book delivery" when it is ready.' : '. Tap "Ready for pickup", or "I\'ll deliver it myself".'
+          order.deliveryMethod === 'delivery'
+            ? ' (delivery is paid to Fez separately). Tap "Book delivery" when it is ready.'
+            : '. Tap "Ready for pickup", or "I\'ll deliver it myself".'
         }`,
       ],
     },
     SHIPPED: {
-      buyer: ['Your order is on its way', `Order ${order.orderNumber} has been handed to the delivery rider.${order.trackingNumber ? ` Tracking number: ${order.trackingNumber}.` : ''}`],
-      seller: ['Delivery booked', `A rider has been booked for order ${order.orderNumber}.${order.trackingNumber ? ` Tracking: ${order.trackingNumber}.` : ''}`],
+      buyer: [
+        'Your order is on its way',
+        `Order ${order.orderNumber} has been handed to the delivery rider.${order.trackingNumber ? ` Tracking number: ${order.trackingNumber}.` : ''}`,
+      ],
+      seller: [
+        'Delivery booked',
+        `A rider has been booked for order ${order.orderNumber}.${order.trackingNumber ? ` Tracking: ${order.trackingNumber}.` : ''}`,
+      ],
     },
     READY_FOR_PICKUP: {
-      buyer: ['Ready for pickup', `Order ${order.orderNumber} is ready. Pick it up at ${shopName}, ${pickupAddress}.`],
-      seller: ['Marked ready for pickup', `${buyerName} has been told order ${order.orderNumber} is ready.`],
+      buyer: [
+        'Ready for pickup',
+        `Order ${order.orderNumber} is ready. Pick it up at ${shopName}, ${pickupAddress}.`,
+      ],
+      seller: [
+        'Marked ready for pickup',
+        `${buyerName} has been told order ${order.orderNumber} is ready.`,
+      ],
     },
     SELLER_DELIVERING: {
-      buyer: ['Your order is on its way', `${shopName} is bringing order ${order.orderNumber} to you themselves.${shopPhone}`],
-      seller: ['Delivering it yourself', `${buyerName} has been told you're bringing order ${order.orderNumber}. Phone: ${order.shippingAddress?.phone ?? 'n/a'}.`],
+      buyer: [
+        'Your order is on its way',
+        `${shopName} is bringing order ${order.orderNumber} to you themselves.${shopPhone}`,
+      ],
+      seller: [
+        'Delivering it yourself',
+        `${buyerName} has been told you're bringing order ${order.orderNumber}. Phone: ${order.shippingAddress?.phone ?? 'n/a'}.`,
+      ],
     },
     DELIVERED: {
-      buyer: ['Order completed', `Thanks! Order ${order.orderNumber} is complete and the seller has been paid.`],
-      seller: ['Payment released', `The buyer confirmed order ${order.orderNumber}. ${itemsTotal} has been released to you.`],
+      buyer: [
+        'Order completed',
+        `Thanks! Order ${order.orderNumber} is complete and the seller has been paid.`,
+      ],
+      seller: [
+        'Payment released',
+        `The buyer confirmed order ${order.orderNumber}. ${itemsTotal} has been released to you.`,
+      ],
     },
     REFUNDED: {
       buyer: ['Order refunded', `Order ${order.orderNumber} was refunded.`],
       seller: ['Order refunded', `Order ${order.orderNumber} was refunded to the buyer.`],
     },
     DISPUTED: {
-      buyer: ['Dispute opened', `A dispute is open on order ${order.orderNumber}. Payluk will review it.`],
-      seller: ['Dispute opened', `A dispute is open on order ${order.orderNumber}. Funds are on hold while Payluk reviews it.`],
+      buyer: [
+        'Dispute opened',
+        `A dispute is open on order ${order.orderNumber}. Payluk will review it.`,
+      ],
+      seller: [
+        'Dispute opened',
+        `A dispute is open on order ${order.orderNumber}. Funds are on hold while Payluk reviews it.`,
+      ],
     },
     DELIVERY_BOOKING_FAILED: {
-      seller: ['Delivery booking failed', `We could not book a rider for order ${order.orderNumber}. Please try again or arrange delivery yourself.`],
+      seller: [
+        'Delivery booking failed',
+        `We could not book a rider for order ${order.orderNumber}. Please try again or arrange delivery yourself.`,
+      ],
     },
   };
 
@@ -178,8 +222,9 @@ export async function notifyOrderEvent(
         relatedId,
         modelType: 'Order',
       },
-    }).catch((e) => console.error('[order-events] buyer notice failed:', e));
-    if (buyer.email) sendOrderEmail(buyer.email, title, message, `${config.frontend.url}${orderLink}`);
+    }).catch(e => console.error('[order-events] buyer notice failed:', e));
+    if (buyer.email)
+      sendOrderEmail(buyer.email, title, message, `${config.frontend.url}${orderLink}`);
   }
 
   // Seller: in-app (sent "from" the buyer) + email.
@@ -200,7 +245,8 @@ export async function notifyOrderEvent(
         relatedId,
         modelType: 'Order',
       },
-    }).catch((e) => console.error('[order-events] seller notice failed:', e));
-    if (seller.email) sendOrderEmail(seller.email, title, message, `${config.frontend.url}${orderLink}`);
+    }).catch(e => console.error('[order-events] seller notice failed:', e));
+    if (seller.email)
+      sendOrderEmail(seller.email, title, message, `${config.frontend.url}${orderLink}`);
   }
 }

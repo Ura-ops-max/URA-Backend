@@ -13,11 +13,16 @@ import { Business } from '@/models/business-model';
 
 async function main() {
   const uri = process.env.MONGODB_URI;
-  if (!uri) { console.error('MONGODB_URI is not set — aborting.'); process.exit(1); }
+  if (!uri) {
+    console.error('MONGODB_URI is not set — aborting.');
+    process.exit(1);
+  }
   await mongoose.connect(uri, process.env.DB_NAME ? { dbName: process.env.DB_NAME } : {});
   console.log('Connected to MongoDB');
 
-  const businesses = await Business.find({ $or: [{ slug: { $exists: false } }, { slug: null }, { slug: '' }] });
+  const businesses = await Business.find({
+    $or: [{ slug: { $exists: false } }, { slug: null }, { slug: '' }],
+  });
   console.log(`Found ${businesses.length} business(es) without a slug.`);
 
   let ok = 0;
@@ -32,7 +37,7 @@ async function main() {
   process.exit(0);
 }
 
-main().catch((err) => {
+main().catch(err => {
   console.error(err);
   process.exit(1);
 });

@@ -18,7 +18,10 @@ async function main() {
 
   const all = process.argv.includes('--all');
   const uri = process.env.MONGODB_URI;
-  if (!uri) { console.error('MONGODB_URI is not set — aborting.'); process.exit(1); }
+  if (!uri) {
+    console.error('MONGODB_URI is not set — aborting.');
+    process.exit(1);
+  }
   await mongoose.connect(uri, process.env.DB_NAME ? { dbName: process.env.DB_NAME } : {});
   console.log('Connected to MongoDB');
 
@@ -30,7 +33,10 @@ async function main() {
   let skipped = 0;
   for (const p of products) {
     const url = (p as any).media?.[0];
-    if (!url) { skipped++; continue; }
+    if (!url) {
+      skipped++;
+      continue;
+    }
     const embedding = await embedImageUrl(url);
     if (embedding) {
       await Product.updateOne({ _id: p._id }, { $set: { imageEmbedding: embedding } });
@@ -47,7 +53,7 @@ async function main() {
   process.exit(0);
 }
 
-main().catch((err) => {
+main().catch(err => {
   console.error(err);
   process.exit(1);
 });

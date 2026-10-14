@@ -30,13 +30,20 @@ export const assistantChat = asyncHandler(async (req: Request, res: Response): P
     return;
   }
 
-  const incoming = Array.isArray(req.body?.messages) ? (req.body.messages as IncomingMessage[]) : [];
+  const incoming = Array.isArray(req.body?.messages)
+    ? (req.body.messages as IncomingMessage[])
+    : [];
 
   // Sanitize: keep only valid user/assistant text turns, cap history length.
   const messages = incoming
-    .filter((m) => (m?.role === 'user' || m?.role === 'assistant') && typeof m?.content === 'string' && m.content.trim())
+    .filter(
+      m =>
+        (m?.role === 'user' || m?.role === 'assistant') &&
+        typeof m?.content === 'string' &&
+        m.content.trim()
+    )
     .slice(-12)
-    .map((m) => ({ role: m.role, content: m.content.trim().slice(0, 2000) }));
+    .map(m => ({ role: m.role, content: m.content.trim().slice(0, 2000) }));
 
   // The Messages API requires the conversation to start with a user turn.
   while (messages.length && messages[0].role !== 'user') messages.shift();
@@ -55,11 +62,13 @@ export const assistantChat = asyncHandler(async (req: Request, res: Response): P
 
     const reply = response.content
       .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-      .map((b) => b.text)
+      .map(b => b.text)
       .join('\n')
       .trim();
 
-    res.status(200).json({ success: true, reply: reply || "Sorry, I didn't catch that — could you rephrase?" });
+    res
+      .status(200)
+      .json({ success: true, reply: reply || "Sorry, I didn't catch that — could you rephrase?" });
   } catch (error) {
     console.error('[assistantChat] Claude request failed:', (error as Error).message);
     res.status(502).json({ success: false, message: 'The assistant is temporarily unavailable.' });

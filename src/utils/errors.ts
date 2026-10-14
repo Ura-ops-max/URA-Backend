@@ -1,6 +1,5 @@
 import { HTTP_STATUS } from '@/constants';
 
-
 export class AppError extends Error {
   public readonly statusCode: number;
   public readonly code: string;
@@ -25,20 +24,20 @@ export class AppError extends Error {
 }
 
 export interface ErrorDetail {
-    field: string;
-    message: string;
-    location: 'body' | 'query' | 'params';
+  field: string;
+  message: string;
+  location: 'body' | 'query' | 'params';
 }
 
 export class ValidationError extends AppError {
-    // Change `details?: unknown` to accept the strongly typed array
-    constructor(message: string, details?: ErrorDetail[]) { 
-        // Pass details directly to AppError, which will put it in the error response.
-        // If details is empty or undefined, we pass undefined, which is fine.
-        const errorDetails = details && details.length > 0 ? details : undefined;
-        
-        super(message, HTTP_STATUS.BAD_REQUEST, 'VALIDATION_ERROR', errorDetails);
-    }
+  // Change `details?: unknown` to accept the strongly typed array
+  constructor(message: string, details?: ErrorDetail[]) {
+    // Pass details directly to AppError, which will put it in the error response.
+    // If details is empty or undefined, we pass undefined, which is fine.
+    const errorDetails = details && details.length > 0 ? details : undefined;
+
+    super(message, HTTP_STATUS.BAD_REQUEST, 'VALIDATION_ERROR', errorDetails);
+  }
 }
 
 export class AuthenticationError extends AppError {

@@ -9,8 +9,8 @@ import {
 const router = Router();
 
 // Public business page — works logged-in or logged-out.
-router.get('/slug-available/:slug', checkSlugAvailability);   // GET /businesses/slug-available/:slug
-router.get('/:slug/qrcode',          getBusinessQrCode);      // GET /businesses/:slug/qrcode
-router.get('/:slug',                 optionalProtect, getPublicBusinessBySlug); // GET /businesses/:slug
+router.get('/slug-available/:slug', checkSlugAvailability); // GET /businesses/slug-available/:slug
+router.get('/:slug/qrcode', getBusinessQrCode); // GET /businesses/:slug/qrcode
+router.get('/:slug', optionalProtect, getPublicBusinessBySlug); // GET /businesses/:slug
 
 export default router;

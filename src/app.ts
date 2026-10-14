@@ -12,7 +12,6 @@ import http from 'http';
 import { socketService } from '@/services/socket.service';
 import { startImageIndexSweep } from '@/services/image-index-sweep.service';
 
-
 // Import routes
 import routes from './routes';
 import { HTTP_STATUS } from './constants';
@@ -61,7 +60,7 @@ const limiter = rateLimit({
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
   // Never throttle Payluk's payment notifications (they're signature-checked);
   // a blocked webhook would leave paid orders stuck on "awaiting payment".
-  skip: (req) => req.path.startsWith('/api/v1/webhooks/') || req.path === '/health',
+  skip: req => req.path.startsWith('/api/v1/webhooks/') || req.path === '/health',
 });
 
 app.use(limiter);
@@ -144,10 +143,10 @@ const startServer = async (): Promise<void> => {
 
     // Safety net: log unexpected async errors but keep the server running, so a
     // single bad request can never take the whole process down.
-    process.on('unhandledRejection', (reason) => {
+    process.on('unhandledRejection', reason => {
       logger.error('Unhandled promise rejection (server stays up):', reason);
     });
-    process.on('uncaughtException', (err) => {
+    process.on('uncaughtException', err => {
       logger.error('Uncaught exception (server stays up):', err);
     });
   } catch (error) {

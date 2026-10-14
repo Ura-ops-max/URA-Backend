@@ -22,20 +22,17 @@ export const requireAuth = (req: Request, res: Response, next: NextFunction): vo
   })(req, res, next);
 };
 
-
-
-
 export const optionalProtect = (req: Request, res: Response, next: NextFunction) => {
   passport.authenticate('jwt', { session: false }, (err: Error, user: any) => {
     if (err) {
       return next(err);
     }
-    
+
     if (user) {
       (req as any).user = user;
     }
 
-    // ALWAYS call next() inside here to ensure the 
+    // ALWAYS call next() inside here to ensure the
     // cycle continues ONLY after Passport is done.
     next();
   })(req, res, next);

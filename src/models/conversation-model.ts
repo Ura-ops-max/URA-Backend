@@ -9,7 +9,7 @@ export interface IConversation extends Document {
   participants: IParticipant[];
   lastMessage?: Types.ObjectId;
   // Use Map for dynamic keys (participantId) to handle unread/visibility
-  unreadCount: Map<string, number>; 
+  unreadCount: Map<string, number>;
   visibleTo: Map<string, boolean>;
   createdAt: Date;
   updatedAt: Date;
@@ -57,12 +57,10 @@ const conversationSchema = new Schema<IConversation>(
 // This index ensures we don't have duplicate chats between the same two entities
 // Note: You'll need to sort participant IDs before saving to make this unique index effective
 // Replace your current index with this:
-conversationSchema.index(
-  { 
-    'participants.participantId': 1, 
-    'participants.participantModel': 1 
-  }
-);
+conversationSchema.index({
+  'participants.participantId': 1,
+  'participants.participantModel': 1,
+});
 conversationSchema.index({ updatedAt: -1 });
 
 export const Conversation = model<IConversation>('Conversation', conversationSchema);

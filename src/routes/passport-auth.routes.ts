@@ -2,7 +2,12 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { config } from '@/config/env.config';
 import { validateRequest } from '@/middleware/validation';
-import { loginSchema, registerSchema, refreshTokenSchema, checkUsernameSchema } from '@/validators/auth.validators';
+import {
+  loginSchema,
+  registerSchema,
+  refreshTokenSchema,
+  checkUsernameSchema,
+} from '@/validators/auth.validators';
 import {
   register,
   login,
@@ -29,8 +34,12 @@ const router = Router();
 const loginLimiter = rateLimit({
   windowMs: config.rateLimit.windowMs,
   max: config.rateLimit.loginMax,
-  keyGenerator: (req) => `${req.ip}:${String(req.body?.email || '').toLowerCase()}`,
-  message: { success: false, message: 'Too many login attempts. Please try again later.', error: { code: 'LOGIN_RATE_LIMIT_EXCEEDED' } },
+  keyGenerator: req => `${req.ip}:${String(req.body?.email || '').toLowerCase()}`,
+  message: {
+    success: false,
+    message: 'Too many login attempts. Please try again later.',
+    error: { code: 'LOGIN_RATE_LIMIT_EXCEEDED' },
+  },
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -39,7 +48,11 @@ const loginLimiter = rateLimit({
 const authLimiter = rateLimit({
   windowMs: config.rateLimit.windowMs,
   max: config.rateLimit.authMax,
-  message: { success: false, message: 'Too many requests. Please try again later.', error: { code: 'AUTH_RATE_LIMIT_EXCEEDED' } },
+  message: {
+    success: false,
+    message: 'Too many requests. Please try again later.',
+    error: { code: 'AUTH_RATE_LIMIT_EXCEEDED' },
+  },
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -53,7 +66,7 @@ router.get('/verify-email', verifyEmail);
 router.post('/resend-verification', authLimiter, resendVerificationPublic);
 router.post('/forgot-password', authLimiter, forgotPassword);
 router.post('/reset-password', authLimiter, resetPassword);
-router.get('/check-username',  validateRequest(checkUsernameSchema), checkUsernameAvailability);
+router.get('/check-username', validateRequest(checkUsernameSchema), checkUsernameAvailability);
 
 // 2FA
 router.post('/2fa/enable', requireAuth, enable2FA);

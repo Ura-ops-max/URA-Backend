@@ -16,8 +16,8 @@ const getRecipientIds = async (req: Request) => {
 export const getNotifications = asyncHandler(async (req: Request, res: Response) => {
   const allRecipientIds = await getRecipientIds(req);
 
-  const notifications = await Notification.find({ 
-    recipient: { $in: allRecipientIds } 
+  const notifications = await Notification.find({
+    recipient: { $in: allRecipientIds },
   })
     .sort({ createdAt: -1 })
     .populate('sender', 'firstName lastName username profilePicture businessName businessLogo')
@@ -29,7 +29,7 @@ export const getNotifications = asyncHandler(async (req: Request, res: Response)
 
 export const markAsRead = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params; // For single ID via URL
-  const { ids } = req.body;   // For bulk selection via Body
+  const { ids } = req.body; // For bulk selection via Body
   const allRecipientIds = await getRecipientIds(req);
 
   const query: any = { recipient: { $in: allRecipientIds }, isRead: false };
@@ -37,7 +37,7 @@ export const markAsRead = asyncHandler(async (req: Request, res: Response) => {
   // 1. Handle Bulk Selection from Desktop Checkboxes
   if (ids && Array.isArray(ids)) {
     query._id = { $in: ids };
-  } 
+  }
   // 2. Handle Single Click
   else if (id) {
     query._id = id;
@@ -64,20 +64,20 @@ export const deleteNotification = asyncHandler(async (req: Request, res: Respons
 
   const result = await Notification.deleteMany(query);
 
-  res.status(200).json({ 
-    success: true, 
-    message: `${result.deletedCount} notification(s) deleted` 
+  res.status(200).json({
+    success: true,
+    message: `${result.deletedCount} notification(s) deleted`,
   });
 });
 
 export const clearAllNotifications = asyncHandler(async (req: Request, res: Response) => {
   const allRecipientIds = await getRecipientIds(req);
 
-  await Notification.deleteMany({ 
-    recipient: { $in: allRecipientIds } 
+  await Notification.deleteMany({
+    recipient: { $in: allRecipientIds },
   });
 
-  res.status(200).json({ success: true, message: "All notifications cleared" });
+  res.status(200).json({ success: true, message: 'All notifications cleared' });
 });
 
 export const getUnreadCount = asyncHandler(async (req: Request, res: Response) => {
@@ -85,7 +85,7 @@ export const getUnreadCount = asyncHandler(async (req: Request, res: Response) =
 
   const count = await Notification.countDocuments({
     recipient: { $in: allRecipientIds },
-    isRead: false
+    isRead: false,
   });
 
   res.status(200).json({ count });
@@ -96,12 +96,11 @@ export const getUnreadCount = asyncHandler(async (req: Request, res: Response) =
 
 // Fetch only activities the user hasn't "cleared"
 export const getActivities = asyncHandler(async (req: Request, res: Response) => {
-  const activities = await Activity.find({ 
+  const activities = await Activity.find({
     user: (req as any).user._id,
-    isHidden: false // Only show visible ones
-  })
-  .sort({ createdAt: -1 });
-  
+    isHidden: false, // Only show visible ones
+  }).sort({ createdAt: -1 });
+
   res.status(200).json(activities);
 });
 
@@ -111,9 +110,9 @@ export const clearAllActivities = asyncHandler(async (req: Request, res: Respons
     { user: (req as any).user._id, isHidden: false },
     { $set: { isHidden: true } }
   );
-  
-  res.status(200).json({ 
-    success: true, 
-    message: "Activity history cleared from view" 
+
+  res.status(200).json({
+    success: true,
+    message: 'Activity history cleared from view',
   });
 });

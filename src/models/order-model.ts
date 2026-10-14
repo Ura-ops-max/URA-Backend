@@ -6,13 +6,13 @@ export enum OrderStatus {
   SHIPPED = 'shipped',
   DELIVERED = 'delivered',
   CANCELLED = 'cancelled',
-  REFUNDED = 'refunded'
+  REFUNDED = 'refunded',
 }
 
 export interface IOrderItem {
   product: mongoose.Types.ObjectId;
-  name: string;      // Snapshot of name
-  price: number;     // Snapshot of price at time of purchase
+  name: string; // Snapshot of name
+  price: number; // Snapshot of price at time of purchase
   quantity: number;
   image: string;
 }
@@ -51,50 +51,55 @@ export interface IOrder extends Document {
   orderNumber: string;
 }
 
-const OrderSchema: Schema = new Schema({
-  user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-  business: { type: Schema.Types.ObjectId, ref: 'Business', required: true },
-  orderNumber: { type: String, required: true, unique: true },
-  items: [{
-    product: { type: Schema.Types.ObjectId, ref: 'Product' },
-    name: { type: String, required: true },
-    price: { type: Number, required: true },
-    quantity: { type: Number, required: true },
-    image: { type: String }
-  }],
-  totalAmount: { type: Number, required: true },
-  deliveryFee: { type: Number, default: 0 },
-  deliveryMethod: { type: String, enum: ['delivery', 'pickup'], default: 'pickup' },
-  shippingAddress: {
-    // Street/city are optional — checkout collects state + phone, and the
-    // rest is pulled from the saved profile when available.
-    fullAddress: { type: String },
-    city: { type: String },
-    state: { type: String },
-    phone: { type: String, required: true }
-  },
-  status: { 
-    type: String, 
-    enum: Object.values(OrderStatus), 
-    default: OrderStatus.PENDING 
-  },
-  paymentStatus: { 
-    type: String, 
-    enum: ['pending', 'paid', 'failed'], 
-    default: 'pending' 
-  },
-  paymentMethod: { type: String, required: true },
-  payment: {
-    provider: String,
-    transactionRef: String,
-    details: Schema.Types.Mixed
-  },
+const OrderSchema: Schema = new Schema(
+  {
+    user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    business: { type: Schema.Types.ObjectId, ref: 'Business', required: true },
+    orderNumber: { type: String, required: true, unique: true },
+    items: [
+      {
+        product: { type: Schema.Types.ObjectId, ref: 'Product' },
+        name: { type: String, required: true },
+        price: { type: Number, required: true },
+        quantity: { type: Number, required: true },
+        image: { type: String },
+      },
+    ],
+    totalAmount: { type: Number, required: true },
+    deliveryFee: { type: Number, default: 0 },
+    deliveryMethod: { type: String, enum: ['delivery', 'pickup'], default: 'pickup' },
+    shippingAddress: {
+      // Street/city are optional — checkout collects state + phone, and the
+      // rest is pulled from the saved profile when available.
+      fullAddress: { type: String },
+      city: { type: String },
+      state: { type: String },
+      phone: { type: String, required: true },
+    },
+    status: {
+      type: String,
+      enum: Object.values(OrderStatus),
+      default: OrderStatus.PENDING,
+    },
+    paymentStatus: {
+      type: String,
+      enum: ['pending', 'paid', 'failed'],
+      default: 'pending',
+    },
+    paymentMethod: { type: String, required: true },
+    payment: {
+      provider: String,
+      transactionRef: String,
+      details: Schema.Types.Mixed,
+    },
 
-  paylukPaymentToken: { type: String, index: true },
-  paylukEscrowId: { type: String, default: null },
-  paidAt: Date,
-  trackingNumber: { type: String },
-  fulfilment: { type: String, enum: ['fez', 'pickup', 'seller_delivery'] }
-}, { timestamps: true });
+    paylukPaymentToken: { type: String, index: true },
+    paylukEscrowId: { type: String, default: null },
+    paidAt: Date,
+    trackingNumber: { type: String },
+    fulfilment: { type: String, enum: ['fez', 'pickup', 'seller_delivery'] },
+  },
+  { timestamps: true }
+);
 
 export default mongoose.model<IOrder>('Order', OrderSchema);

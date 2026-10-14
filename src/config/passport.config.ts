@@ -26,10 +26,7 @@ passport.use(
         const normalizedIdentifier = identifier.toLowerCase().trim();
 
         const user = await User.findOne({
-          $or: [
-            { email: normalizedIdentifier },
-            { username: normalizedIdentifier }
-          ],
+          $or: [{ email: normalizedIdentifier }, { username: normalizedIdentifier }],
         }).select('+password +twoFactorSecret');
 
         // 3. Check if user exists and has a password set
@@ -125,9 +122,9 @@ passport.use(
             }
             await user.save();
           } else {
-            const nameParts  = profile.displayName?.split(' ') ?? [];
-            const firstName  = profile.name?.givenName  || nameParts[0] || 'User';
-            const lastName   = profile.name?.familyName || nameParts.slice(1).join(' ') || '';
+            const nameParts = profile.displayName?.split(' ') ?? [];
+            const firstName = profile.name?.givenName || nameParts[0] || 'User';
+            const lastName = profile.name?.familyName || nameParts.slice(1).join(' ') || '';
             // Generate a unique username — pre-save hook will also try but may collide
             const baseUsername = `_${firstName.toLowerCase()}${lastName.toLowerCase()}`;
             const username = `${baseUsername}${Date.now().toString(36)}`;

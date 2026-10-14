@@ -3,7 +3,7 @@ import { Review } from '@/models/review-model';
 import { Comment } from '@/models/comment-model';
 
 export async function getRatingForBusiness(
-  businessId: Types.ObjectId | string,
+  businessId: Types.ObjectId | string
 ): Promise<{ average: number; count: number }> {
   const rows = await Review.aggregate([
     { $match: { reviewedItem: new Types.ObjectId(businessId.toString()) } },
@@ -19,9 +19,9 @@ export async function getRatingForBusiness(
 export async function buildFeedPost(
   post: any,
   currentUserId: string | null,
-  bookmarkedPostIds: string[],
+  bookmarkedPostIds: string[]
 ): Promise<Record<string, unknown>> {
-  const author     = post.author;
+  const author = post.author;
   const isBusiness = post.authorType === 'Business';
   const hasProduct = !!post.product;
 
@@ -32,22 +32,20 @@ export async function buildFeedPost(
 
   return {
     ...post,
-    type:          hasProduct ? 'PRODUCT' : 'POST',
-    authorId:      author?._id,
-    displayName:   isBusiness ? author?.businessName : `${author?.firstName} ${author?.lastName}`,
-    displayAvatar: isBusiness ? author?.businessLogo  : author?.profilePicture,
+    type: hasProduct ? 'PRODUCT' : 'POST',
+    authorId: author?._id,
+    displayName: isBusiness ? author?.businessName : `${author?.firstName} ${author?.lastName}`,
+    displayAvatar: isBusiness ? author?.businessLogo : author?.profilePicture,
     // Public page link for business authors (ura.com.ng/<slug>).
-    businessSlug:  isBusiness ? author?.slug : undefined,
-    username:      isBusiness ? null : author?.username,
-    likesCount:    post.likes?.length ?? 0,
+    businessSlug: isBusiness ? author?.slug : undefined,
+    username: isBusiness ? null : author?.username,
+    likesCount: post.likes?.length ?? 0,
     commentsCount,
-    isBookmarked:  bookmarkedPostIds.includes(post._id.toString()),
-    isLiked:       currentUserId
-      ? post.likes?.some((id: any) => id.toString() === currentUserId)
-      : false,
-    isVerified:    author?.isVerified || false,
-    rating:        ratingData.average,
-    reviewCount:   ratingData.count,
-    isFeatured:    ratingData.average >= 4.5 && ratingData.count > 10,
+    isBookmarked: bookmarkedPostIds.includes(post._id.toString()),
+    isLiked: currentUserId ? post.likes?.some((id: any) => id.toString() === currentUserId) : false,
+    isVerified: author?.isVerified || false,
+    rating: ratingData.average,
+    reviewCount: ratingData.count,
+    isFeatured: ratingData.average >= 4.5 && ratingData.count > 10,
   };
 }

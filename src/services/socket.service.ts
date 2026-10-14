@@ -7,9 +7,9 @@ class SocketService {
   public init(httpServer: HTTPServer) {
     this._io = new SocketIOServer(httpServer, {
       cors: {
-        origin: "*",
-        methods: ["GET", "POST"]
-      }
+        origin: '*',
+        methods: ['GET', 'POST'],
+      },
     });
 
     console.log('Socket Service Initialized');
@@ -32,9 +32,9 @@ class SocketService {
         console.log(`Profile ${idStr} is now online.`);
 
         // Broadcast to all connected clients that this user is online
-        this._io?.emit("user_status_changed", {
+        this._io?.emit('user_status_changed', {
           userId: idStr,
-          status: "online"
+          status: 'online',
         });
 
         socket.emit('connected');
@@ -58,10 +58,10 @@ class SocketService {
             console.log(`Profile ${profileId} went fully offline.`);
 
             // Broadcast to all clients that user is offline
-            this._io?.emit("user_status_changed", {
+            this._io?.emit('user_status_changed', {
               userId: profileId,
-              status: "offline",
-              lastSeen: new Date()
+              status: 'offline',
+              lastSeen: new Date(),
             });
           }
         }
@@ -70,9 +70,9 @@ class SocketService {
       // Inside your init() method in the backend:
       socket.on('check_online_status', (targetProfileId: string) => {
         const online = this.isOnline(targetProfileId);
-        socket.emit("user_status_changed", {
+        socket.emit('user_status_changed', {
           userId: targetProfileId,
-          status: online ? "online" : "offline"
+          status: online ? 'online' : 'offline',
         });
       });
     });

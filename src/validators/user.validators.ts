@@ -19,11 +19,11 @@ const userProfileFields = {
   }),
 
   // username: usernameSchema,
-  username : usernameSchema.optional().messages({
+  username: usernameSchema.optional().messages({
     'string.min': 'Username must be at least 3 characters long',
     'string.max': 'Username cannot exceed 30 characters',
   }),
-  
+
   bio: bioSchema,
 
   businessName: Joi.string().min(2).max(100).trim().allow('', null).optional().messages({
@@ -57,15 +57,16 @@ export const userBusinessFields = {
   email: Joi.string().email().allow('', null).optional(),
   businessLogo: uriSchema.label('Business Logo'),
   businessCover: uriSchema.label('Business Cover'),
-  operatingHours: Joi.array().items(
-    Joi.object({
-      day: Joi.string().required(),
-      open: Joi.string().required(),
-      close: Joi.string().required(),
-    })
-  ).optional(),
+  operatingHours: Joi.array()
+    .items(
+      Joi.object({
+        day: Joi.string().required(),
+        open: Joi.string().required(),
+        close: Joi.string().required(),
+      })
+    )
+    .optional(),
 };
-
 
 export const userSchemas = {
   updateProfile: createSchema(userProfileFields).min(1).messages({
@@ -78,4 +79,3 @@ export const userSchemas = {
 
 export const updateProfileSchema = { body: userSchemas.updateProfile };
 export const updateBusinessSchema = { body: userSchemas.updateBusiness };
-

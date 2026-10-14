@@ -5,31 +5,46 @@ import { trackEvent } from '@/services/track-event.service';
 
 export const getUserById = (userId: string) =>
   User.findById(userId).select(
-    '-password -emailVerificationToken -emailVerificationExpires -twoFactorSecret -mfaRecoveryCodes',
+    '-password -emailVerificationToken -emailVerificationExpires -twoFactorSecret -mfaRecoveryCodes'
   );
 
 export async function updateUserProfile(
   userId: string,
   data: {
-    firstName?: string; lastName?: string; username?: string; phone?: string;
-    bio?: string; profilePicture?: string; coverPicture?: string;
-  },
+    firstName?: string;
+    lastName?: string;
+    username?: string;
+    phone?: string;
+    bio?: string;
+    profilePicture?: string;
+    coverPicture?: string;
+  }
 ) {
   const updateData: Record<string, string> = {};
-  if (data.firstName)     updateData.firstName      = data.firstName;
-  if (data.lastName)      updateData.lastName       = data.lastName;
+  if (data.firstName) updateData.firstName = data.firstName;
+  if (data.lastName) updateData.lastName = data.lastName;
   // username & phone were accepted by the API but never persisted.
-  if (data.username)      updateData.username       = data.username.trim().toLowerCase();
-  if (data.phone)         updateData.phone          = data.phone.trim();
-  if (data.bio)           updateData.bio            = data.bio;
+  if (data.username) updateData.username = data.username.trim().toLowerCase();
+  if (data.phone) updateData.phone = data.phone.trim();
+  if (data.bio) updateData.bio = data.bio;
   if (data.profilePicture) updateData.profilePicture = data.profilePicture;
-  if (data.coverPicture)  updateData.coverPicture   = data.coverPicture;
+  if (data.coverPicture) updateData.coverPicture = data.coverPicture;
 
-  const user = await User.findByIdAndUpdate(userId, { $set: updateData }, { new: true, runValidators: true });
-  if (!user) { const e: any = new Error('User not found'); e.status = 404; throw e; }
+  const user = await User.findByIdAndUpdate(
+    userId,
+    { $set: updateData },
+    { new: true, runValidators: true }
+  );
+  if (!user) {
+    const e: any = new Error('User not found');
+    e.status = 404;
+    throw e;
+  }
 
   trackEvent({
-    targetId: userId, targetModel: 'User', type: 'ACTIVITY',
+    targetId: userId,
+    targetModel: 'User',
+    type: 'ACTIVITY',
     activityData: { action: 'PROFILE_UPDATE', description: 'You updated your profile information' },
   }).catch(() => {});
 
@@ -38,17 +53,21 @@ export async function updateUserProfile(
 
 export async function updateShippingAddress(
   userId: string,
-  data: { phone?: string; state?: string; city?: string; fullAddress?: string },
+  data: { phone?: string; state?: string; city?: string; fullAddress?: string }
 ) {
   const updateData: Record<string, string> = {};
-  if (data.phone)       updateData['shippingAddress.phone']       = data.phone.trim();
+  if (data.phone) updateData['shippingAddress.phone'] = data.phone.trim();
   // State is what the delivery (Fez) quote is priced on, so persist it too.
-  if (data.state)       updateData['shippingAddress.state']       = data.state.trim();
-  if (data.city)        updateData['shippingAddress.city']        = data.city.trim();
+  if (data.state) updateData['shippingAddress.state'] = data.state.trim();
+  if (data.city) updateData['shippingAddress.city'] = data.city.trim();
   if (data.fullAddress) updateData['shippingAddress.fullAddress'] = data.fullAddress.trim();
 
   const user = await User.findByIdAndUpdate(userId, { $set: updateData }, { new: true });
-  if (!user) { const e: any = new Error('User not found'); e.status = 404; throw e; }
+  if (!user) {
+    const e: any = new Error('User not found');
+    e.status = 404;
+    throw e;
+  }
   return user.shippingAddress;
 }
 
@@ -69,7 +88,7 @@ export async function convertUserToBusiness(userId: string) {
   try {
     if (session) session.startTransaction();
 
-    await User.findByIdAndUpdate(userId, { isBusinessOwner: true }, { session: session ?? undefined });
+    await User.findByIdAndUpdate(userId, { isBusinessOwner: true }, session ? { session } : {});
     const businessData = {
       owner: userId,
       businessName: `${user.firstName}'s Business`,
@@ -89,14 +108,22 @@ export async function convertUserToBusiness(userId: string) {
     if (session) await session.commitTransaction();
 
     trackEvent({
-      targetId: userId, targetModel: 'User', type: 'BOTH',
+      targetId: userId,
+      targetModel: 'User',
+      type: 'BOTH',
       notificationData: {
-        type: 'BUSINESS', title: 'Welcome Business Owner!',
+        type: 'BUSINESS',
+        title: 'Welcome Business Owner!',
         message: 'Your account has been upgraded. Start setting up your business profile.',
-        sender: userId, senderModel: 'User',
-        relatedId: business._id.toString(), modelType: 'Order',
+        sender: userId,
+        senderModel: 'User',
+        relatedId: business._id.toString(),
+        modelType: 'Order',
       },
-      activityData: { action: 'BUSINESS_CONVERSION', description: `You converted to a business: ${business.businessName}` },
+      activityData: {
+        action: 'BUSINESS_CONVERSION',
+        description: `You converted to a business: ${business.businessName}`,
+      },
     }).catch(() => {});
 
     return business;

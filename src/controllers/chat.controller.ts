@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
-import { Conversation } from "@/models/conversation-model";
-import { Message } from "@/models/message-model";
+import { Conversation } from '@/models/conversation-model';
+import { Message } from '@/models/message-model';
 import { Business } from '@/models/business-model';
 import { Types } from 'mongoose';
 import { trackEvent } from '@/services/track-event.service';
@@ -11,8 +11,7 @@ const getAuthUserId = (req: Request): string | null => {
   return id ? id.toString() : null;
 };
 
-const isValidId = (v: unknown): v is string =>
-  typeof v === 'string' && Types.ObjectId.isValid(v);
+const isValidId = (v: unknown): v is string => typeof v === 'string' && Types.ObjectId.isValid(v);
 
 // The signed-in user may act as themselves (their own id) or as a business they
 // own. Returns true only if `profileId` is one of those.
@@ -28,24 +27,28 @@ export const accessConversation = async (req: Request, res: Response): Promise<v
     const authenticatedUserId = getAuthUserId(req);
 
     if (!isValidId(senderId) || !isValidId(receiverId)) {
-      res.status(400).json({ success: false, message: "Valid participant IDs are required" });
+      res.status(400).json({ success: false, message: 'Valid participant IDs are required' });
       return;
     }
     if (senderModel !== 'User' && senderModel !== 'Business') {
-      res.status(400).json({ success: false, message: "Invalid sender type" });
+      res.status(400).json({ success: false, message: 'Invalid sender type' });
       return;
     }
 
     // The sender must be the signed-in user, or a business they own.
     if (senderModel === 'User') {
       if (senderId !== authenticatedUserId) {
-        res.status(403).json({ success: false, message: "Unauthorized: You cannot impersonate this user." });
+        res
+          .status(403)
+          .json({ success: false, message: 'Unauthorized: You cannot impersonate this user.' });
         return;
       }
     } else {
       const business = await Business.findOne({ _id: senderId, owner: authenticatedUserId });
       if (!business) {
-        res.status(403).json({ success: false, message: "Unauthorized: You do not own this business account." });
+        res
+          .status(403)
+          .json({ success: false, message: 'Unauthorized: You do not own this business account.' });
         return;
       }
     }
@@ -54,9 +57,9 @@ export const accessConversation = async (req: Request, res: Response): Promise<v
       participants: {
         $all: [
           { $elemMatch: { participantId: senderId, participantModel: senderModel } },
-          { $elemMatch: { participantId: receiverId, participantModel: receiverModel } }
-        ]
-      }
+          { $elemMatch: { participantId: receiverId, participantModel: receiverModel } },
+        ],
+      },
     })
       .populate('lastMessage')
       .populate('participants.participantId');
@@ -77,10 +80,10 @@ export const accessConversation = async (req: Request, res: Response): Promise<v
     const newConversation = await Conversation.create({
       participants: [
         { participantId: senderId, participantModel: senderModel },
-        { participantId: receiverId, participantModel: receiverModel }
+        { participantId: receiverId, participantModel: receiverModel },
       ],
       unreadCount: unreadMap,
-      visibleTo: visibilityMap
+      visibleTo: visibilityMap,
     });
 
     await trackEvent({
@@ -90,15 +93,18 @@ export const accessConversation = async (req: Request, res: Response): Promise<v
       activityData: {
         action: 'CHAT_INITIATED',
         description: `You started a conversation with a ${receiverModel}`,
-      }
-    }).catch(() => { /* non-fatal */ });
+      },
+    }).catch(() => {
+      /* non-fatal */
+    });
 
-    const populatedChat = await Conversation.findById(newConversation._id)
-      .populate('participants.participantId');
+    const populatedChat = await Conversation.findById(newConversation._id).populate(
+      'participants.participantId'
+    );
 
     res.status(201).json({ success: true, data: populatedChat });
   } catch (error: any) {
-    console.error("Access Conversation Error:", error);
+    console.error('Access Conversation Error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -109,22 +115,24 @@ export const getConversations = async (req: Request, res: Response): Promise<voi
     const authenticatedUserId = getAuthUserId(req);
 
     if (!isValidId(profileId)) {
-      res.status(400).json({ success: false, message: "A valid Profile ID is required" });
+      res.status(400).json({ success: false, message: 'A valid Profile ID is required' });
       return;
     }
 
     if (!(await ownsProfile(authenticatedUserId, profileId))) {
-      res.status(403).json({ success: false, message: "Unauthorized access to this profile's chats." });
+      res
+        .status(403)
+        .json({ success: false, message: "Unauthorized access to this profile's chats." });
       return;
     }
 
     const conversations = await Conversation.find({
-      "participants.participantId": profileId,
-      [`visibleTo.${profileId}`]: { $ne: false }
+      'participants.participantId': profileId,
+      [`visibleTo.${profileId}`]: { $ne: false },
     })
       .populate({
         path: 'participants.participantId',
-        select: 'firstName lastName businessName profilePicture businessLogo'
+        select: 'firstName lastName businessName profilePicture businessLogo',
       })
       .populate('lastMessage')
       .sort({ updatedAt: -1 });
@@ -142,13 +150,15 @@ export const getMessages = async (req: Request, res: Response): Promise<void> =>
     const authenticatedUserId = getAuthUserId(req);
 
     if (!isValidId(conversationId) || !isValidId(profileId)) {
-      res.status(400).json({ success: false, message: "Valid conversation and profile IDs are required" });
+      res
+        .status(400)
+        .json({ success: false, message: 'Valid conversation and profile IDs are required' });
       return;
     }
 
     const conversation = await Conversation.findById(conversationId);
     if (!conversation) {
-      res.status(404).json({ success: false, message: "Conversation not found" });
+      res.status(404).json({ success: false, message: 'Conversation not found' });
       return;
     }
 
@@ -158,7 +168,7 @@ export const getMessages = async (req: Request, res: Response): Promise<void> =>
     const isOwner = await ownsProfile(authenticatedUserId, profileId);
 
     if (!isParticipant || !isOwner) {
-      res.status(403).json({ success: false, message: "Unauthorized access to these messages." });
+      res.status(403).json({ success: false, message: 'Unauthorized access to these messages.' });
       return;
     }
 
@@ -192,19 +202,21 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
     const authenticatedUserId = getAuthUserId(req);
 
     if (!isValidId(conversationId) || !isValidId(senderId)) {
-      res.status(400).json({ success: false, message: "Valid conversation and sender IDs are required" });
+      res
+        .status(400)
+        .json({ success: false, message: 'Valid conversation and sender IDs are required' });
       return;
     }
 
     // The sender must be the signed-in user, or a business they own.
     if (!(await ownsProfile(authenticatedUserId, senderId))) {
-      res.status(403).json({ success: false, message: "Unauthorized sender identity." });
+      res.status(403).json({ success: false, message: 'Unauthorized sender identity.' });
       return;
     }
 
     const conversation = await Conversation.findById(conversationId);
     if (!conversation) {
-      res.status(404).json({ success: false, message: "Chat not found" });
+      res.status(404).json({ success: false, message: 'Chat not found' });
       return;
     }
 
@@ -213,7 +225,9 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
       p => p.participantId.toString() === senderId
     );
     if (!senderIsParticipant) {
-      res.status(403).json({ success: false, message: "You are not a participant in this conversation." });
+      res
+        .status(403)
+        .json({ success: false, message: 'You are not a participant in this conversation.' });
       return;
     }
 
@@ -223,12 +237,10 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
       senderModel,
       content,
       media,
-      status: 'sent'
+      status: 'sent',
     });
 
-    const receiver = conversation.participants.find(
-      p => p.participantId.toString() !== senderId
-    );
+    const receiver = conversation.participants.find(p => p.participantId.toString() !== senderId);
 
     if (receiver) {
       const receiverId = receiver.participantId.toString();
@@ -246,9 +258,11 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
           sender: senderId,
           senderModel: senderModel as any,
           relatedId: conversationId,
-          modelType: 'User'
-        }
-      }).catch(() => { /* non-fatal */ });
+          modelType: 'User',
+        },
+      }).catch(() => {
+        /* non-fatal */
+      });
     }
 
     conversation.lastMessage = newMessage._id as Types.ObjectId;
@@ -256,7 +270,10 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
     if (receiver) conversation.visibleTo.set(receiver.participantId.toString(), true);
     await conversation.save();
 
-    const populatedMessage = await newMessage.populate('sender', 'firstName lastName businessName profilePicture businessLogo');
+    const populatedMessage = await newMessage.populate(
+      'sender',
+      'firstName lastName businessName profilePicture businessLogo'
+    );
     const io = req.app.get('io');
     if (io) {
       io.to(conversationId).emit('message:received', populatedMessage);
@@ -265,7 +282,7 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
         io.to(receiverId).emit('new_notification', {
           type: 'MESSAGE',
           conversationId,
-          unreadCount: conversation.unreadCount.get(receiverId)
+          unreadCount: conversation.unreadCount.get(receiverId),
         });
       }
     }

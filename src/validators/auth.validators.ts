@@ -1,4 +1,3 @@
-
 import {
   createSchema,
   emailSchema,
@@ -16,7 +15,7 @@ export const authSchemas = {
     firstName: nameSchema.label('First name'),
     lastName: nameSchema.label('Last name'),
     username: usernameSchema,
-    phone: phoneSchema, 
+    phone: phoneSchema,
   }),
 
   login: createSchema({
@@ -43,10 +42,8 @@ export const authSchemas = {
   }),
   checkUsername: createSchema({
     username: usernameSchema,
-  }
-  )
+  }),
 };
-
 
 // Export individual schemas with body wrapper
 export const registerSchema = { body: authSchemas.register };
@@ -56,6 +53,3 @@ export const forgotPasswordSchema = { body: authSchemas.forgotPassword };
 export const resetPasswordSchema = { body: authSchemas.resetPassword };
 export const changePasswordSchema = { body: authSchemas.changePassword };
 export const checkUsernameSchema = { query: authSchemas.checkUsername };
-
-
-

@@ -1,4 +1,3 @@
-
 import { Request, Response } from 'express';
 import { User } from '@/models/user-model';
 import { asyncHandler } from '@/middleware/errorHandler';
@@ -11,7 +10,7 @@ export const getMyBookmarks = asyncHandler(async (req: Request, res: Response): 
   const currentUserId = (req as any).user?._id;
 
   if (!currentUserId) {
-    res.status(401).json({ message: "User not authenticated" });
+    res.status(401).json({ message: 'User not authenticated' });
     return;
   }
 
@@ -22,18 +21,21 @@ export const getMyBookmarks = asyncHandler(async (req: Request, res: Response): 
   const userWithBookmarks = await User.findById(currentUserId)
     .populate({
       path: bookmarkField,
-      populate: isPostRequest ? [
-        { 
-          path: 'author', 
-          select: '_id username businessName firstName lastName profilePicture businessLogo isVerified' 
-        },
-        { path: 'product' }
-      ] : []
+      populate: isPostRequest
+        ? [
+            {
+              path: 'author',
+              select:
+                '_id username businessName firstName lastName profilePicture businessLogo isVerified',
+            },
+            { path: 'product' },
+          ]
+        : [],
     })
     .lean();
 
   if (!userWithBookmarks) {
-    res.status(404).json({ message: "User not found" });
+    res.status(404).json({ message: 'User not found' });
     return;
   }
 
@@ -43,60 +45,64 @@ export const getMyBookmarks = asyncHandler(async (req: Request, res: Response): 
   if (!isPostRequest) {
     const formattedBusinesses = rawResults.map((item: any) => ({
       ...item,
-      isBookmarked: true
+      isBookmarked: true,
     }));
     res.status(200).json(formattedBusinesses);
     return;
   }
 
   // 3. If it's a POST bookmark, apply full FEED logic (Likes, Reviews, Comments)
-  const formattedPosts = await Promise.all(rawResults.map(async (post: any) => {
-    const author = post.author;
-    const isBusiness = post.authorType === 'Business';
-    const hasProduct = !!post.product;
+  const formattedPosts = await Promise.all(
+    rawResults.map(async (post: any) => {
+      const author = post.author;
+      const isBusiness = post.authorType === 'Business';
+      const hasProduct = !!post.product;
 
-    // Fetch Rating Data for Business Authors
-    let ratingData = { average: 0, count: 0 };
-    if (isBusiness && author?._id) {
-      const reviews = await Review.aggregate([
-        { $match: { reviewedItem: new Types.ObjectId(author._id) } },
-        {
-          $group: {
-            _id: null,
-            avgRating: { $avg: "$rating" },
-            count: { $sum: 1 }
-          }
+      // Fetch Rating Data for Business Authors
+      let ratingData = { average: 0, count: 0 };
+      if (isBusiness && author?._id) {
+        const reviews = await Review.aggregate([
+          { $match: { reviewedItem: new Types.ObjectId(author._id) } },
+          {
+            $group: {
+              _id: null,
+              avgRating: { $avg: '$rating' },
+              count: { $sum: 1 },
+            },
+          },
+        ]);
+        if (reviews.length > 0) {
+          ratingData = {
+            average: Math.round(reviews[0].avgRating * 10) / 10,
+            count: reviews[0].count,
+          };
         }
-      ]);
-      if (reviews.length > 0) {
-        ratingData = {
-          average: Math.round(reviews[0].avgRating * 10) / 10,
-          count: reviews[0].count
-        };
       }
-    }
 
-    // Interaction Counts
-    const isLiked = post.likes ? post.likes.some((id: any) => id.toString() === currentUserId.toString()) : false;
-    const commentsCount = await Comment.countDocuments({ postId: post._id });
+      // Interaction Counts
+      const isLiked = post.likes
+        ? post.likes.some((id: any) => id.toString() === currentUserId.toString())
+        : false;
+      const commentsCount = await Comment.countDocuments({ postId: post._id });
 
-    return {
-      ...post,
-      type: hasProduct ? 'PRODUCT' : 'POST',
-      authorId: author?._id,
-      displayName: isBusiness ? author?.businessName : `${author?.firstName} ${author?.lastName}`,
-      displayAvatar: isBusiness ? author?.businessLogo : author?.profilePicture,
-      username: isBusiness ? null : author?.username,
-      likesCount: post.likes?.length || 0,
-      commentsCount,
-      isBookmarked: true, // It's in the bookmark list, so this is always true
-      isLiked,
-      isVerified: author?.isVerified || false,
-      rating: ratingData.average,
-      reviewCount: ratingData.count,
-      isFeatured: ratingData.average >= 4.5 && ratingData.count > 10
-    };
-  }));
+      return {
+        ...post,
+        type: hasProduct ? 'PRODUCT' : 'POST',
+        authorId: author?._id,
+        displayName: isBusiness ? author?.businessName : `${author?.firstName} ${author?.lastName}`,
+        displayAvatar: isBusiness ? author?.businessLogo : author?.profilePicture,
+        username: isBusiness ? null : author?.username,
+        likesCount: post.likes?.length || 0,
+        commentsCount,
+        isBookmarked: true, // It's in the bookmark list, so this is always true
+        isLiked,
+        isVerified: author?.isVerified || false,
+        rating: ratingData.average,
+        reviewCount: ratingData.count,
+        isFeatured: ratingData.average >= 4.5 && ratingData.count > 10,
+      };
+    })
+  );
 
   res.status(200).json(formattedPosts);
 });

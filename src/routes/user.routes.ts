@@ -18,20 +18,20 @@ import { toggleFollow, toggleBookmark } from '@/controllers/interaction.controll
 const router = Router();
 
 // Current user
-router.get('/me',                requireAuth, getCurrentUser);
-router.get('/me/wishlist',       requireAuth, getWishlistProducts);
-router.patch('/me/profile',      requireAuth, validateRequest(updateProfileSchema), updateProfile);
-router.patch('/me/business',     requireAuth, validateRequest(updateBusinessSchema), updateBusiness);
-router.patch('/me/shipping',     requireAuth, updateShippingAddress);
+router.get('/me', requireAuth, getCurrentUser);
+router.get('/me/wishlist', requireAuth, getWishlistProducts);
+router.patch('/me/profile', requireAuth, validateRequest(updateProfileSchema), updateProfile);
+router.patch('/me/business', requireAuth, validateRequest(updateBusinessSchema), updateBusiness);
+router.patch('/me/shipping', requireAuth, updateShippingAddress);
 router.post('/me/convert-to-business', requireAuth, convertToBusiness);
 
 // Other users
-router.get('/:userId',                    requireAuth, getUserProfile);
-router.get('/:userId/social',             requireAuth, getFollowList);
-router.get('/business/:businessId',       requireAuth, getBusinessProfile);
+router.get('/:userId', requireAuth, getUserProfile);
+router.get('/:userId/social', requireAuth, getFollowList);
+router.get('/business/:businessId', requireAuth, getBusinessProfile);
 
 // Social interactions
-router.post('/follow/:targetId',          requireAuth, toggleFollow);
-router.post('/bookmarks/:targetId',       requireAuth, toggleBookmark);
+router.post('/follow/:targetId', requireAuth, toggleFollow);
+router.post('/bookmarks/:targetId', requireAuth, toggleBookmark);
 
 export default router;

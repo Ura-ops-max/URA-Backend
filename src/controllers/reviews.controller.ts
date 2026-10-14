@@ -16,17 +16,19 @@ const getAuthUserId = (req: Request): string | null => {
  */
 export const createReview = async (req: Request, res: Response) => {
   try {
-
     const { reviewedItem, reviewedItemModel, rating, comment } = req.body;
     const userId = getAuthUserId(req);
 
     if (!userId) {
-      return res.status(401).json({ success: false, message: "Authentication required" });
+      return res.status(401).json({ success: false, message: 'Authentication required' });
     }
     // 1. Business Logic: Check if user already reviewed this item
     const existingReview = await Review.findOne({ reviewedItem, user: userId });
     if (existingReview) {
-      return res.status(400).json({ success: false, message: "You have already reviewed this item. Please update your existing review." });
+      return res.status(400).json({
+        success: false,
+        message: 'You have already reviewed this item. Please update your existing review.',
+      });
     }
     const review = await Review.create({
       reviewedItem,
@@ -36,33 +38,32 @@ export const createReview = async (req: Request, res: Response) => {
       comment,
     });
 
-
     // 🚨 TRACK EVENT LOGIC
     // 1. Determine who needs to be notified (Business Owner or Product Owner)
     let recipientId: string | null = null;
-    let itemName = "your item";
+    let itemName = 'your item';
 
     if (reviewedItemModel === 'Business') {
       const biz = await Business.findById(reviewedItem);
       recipientId = biz?.owner?.toString() || null;
-      itemName = biz?.businessName || "your business";
+      itemName = biz?.businessName || 'your business';
     } else if (reviewedItemModel === 'Product') {
       const prod = await Product.findById(reviewedItem).populate('business');
       // Assuming product has a 'business' field which has an 'owner'
       recipientId = (prod as any)?.business?.owner?.toString() || null;
-      itemName = prod?.name || "your product";
+      itemName = prod?.name || 'your product';
     }
 
     // 2. Log Activity for the Reviewer
     await trackEvent({
-        targetId: userId,
-        targetModel: 'User',
-        type: 'ACTIVITY',
-        activityData: {
-            action: 'REVIEW_CREATE',
-            description: `You gave a ${rating}-star review to ${itemName}`,
-            metadata: {contentPreview: comment?.substring(0, 50)}
-        }
+      targetId: userId,
+      targetModel: 'User',
+      type: 'ACTIVITY',
+      activityData: {
+        action: 'REVIEW_CREATE',
+        description: `You gave a ${rating}-star review to ${itemName}`,
+        metadata: { contentPreview: comment?.substring(0, 50) },
+      },
     });
 
     // 3. Notify the Owner
@@ -83,15 +84,16 @@ export const createReview = async (req: Request, res: Response) => {
       });
     }
 
-
     return res.status(201).json({ success: true, data: review });
   } catch (error: any) {
     if (error.code === 11000) {
-      return res.status(400).json({ success: false, message: "You have already reviewed this item." });
+      return res
+        .status(400)
+        .json({ success: false, message: 'You have already reviewed this item.' });
     }
     return res.status(500).json({ success: false, message: error.message });
-  }}
-
+  }
+};
 
 /**
  * GET REVIEWS FOR AN ITEM (Business or Product)
@@ -113,10 +115,6 @@ export const getItemReviews = async (req: Request, res: Response) => {
   }
 };
 
-
-
-
-
 /**
  * @desc    Toggle Like on a review (Atomic)
  */
@@ -126,7 +124,7 @@ export const toggleLikeReview = async (req: Request, res: Response) => {
   const userId = user?.id || user?._id || user?.userId;
 
   if (!userId) {
-    return res.status(401).json({ success: false, message: "Authentication required" });
+    return res.status(401).json({ success: false, message: 'Authentication required' });
   }
 
   const review = await Review.findById(id);
@@ -136,11 +134,11 @@ export const toggleLikeReview = async (req: Request, res: Response) => {
   const hasDisliked = review.dislikes.includes(userId);
 
   if (hasLiked) {
-    review.likes = review.likes.filter((uid) => uid.toString() !== userId);
+    review.likes = review.likes.filter(uid => uid.toString() !== userId);
   } else {
     review.likes.push(userId);
     if (hasDisliked) {
-      review.dislikes = review.dislikes.filter((uid) => uid.toString() !== userId);
+      review.dislikes = review.dislikes.filter(uid => uid.toString() !== userId);
     }
   }
 
@@ -157,7 +155,7 @@ export const toggleDislikeReview = async (req: Request, res: Response) => {
   const userId = user?.id || user?._id || user?.userId;
 
   if (!userId) {
-    return res.status(401).json({ success: false, message: "Authentication required" });
+    return res.status(401).json({ success: false, message: 'Authentication required' });
   }
 
   const review = await Review.findById(id);
@@ -167,11 +165,11 @@ export const toggleDislikeReview = async (req: Request, res: Response) => {
   const hasDisliked = review.dislikes.includes(userId);
 
   if (hasDisliked) {
-    review.dislikes = review.dislikes.filter((uid) => uid.toString() !== userId);
+    review.dislikes = review.dislikes.filter(uid => uid.toString() !== userId);
   } else {
     review.dislikes.push(userId);
     if (hasLiked) {
-      review.likes = review.likes.filter((uid) => uid.toString() !== userId);
+      review.likes = review.likes.filter(uid => uid.toString() !== userId);
     }
   }
 
@@ -187,13 +185,13 @@ export const updateReview = async (req: Request, res: Response) => {
   const userId = user?.id || user?._id || user?.userId;
 
   if (!userId) {
-    return res.status(401).json({ success: false, message: "Authentication required" });
+    return res.status(401).json({ success: false, message: 'Authentication required' });
   }
 
   const review = await Review.findOneAndUpdate(
-      { _id: req.params.id, user: userId },
-      { rating: req.body.rating, comment: req.body.comment },
-      { new: true, runValidators: true }
+    { _id: req.params.id, user: userId },
+    { rating: req.body.rating, comment: req.body.comment },
+    { new: true, runValidators: true }
   );
 
   if (!review) return res.status(400).json({ success: false, message: 'Review not found' });
@@ -209,7 +207,7 @@ export const deleteReview = async (req: Request, res: Response) => {
   const userId = user?.id || user?._id || user?.userId;
 
   if (!userId) {
-    return res.status(401).json({ success: false, message: "Authentication required" });
+    return res.status(401).json({ success: false, message: 'Authentication required' });
   }
 
   const review = await Review.findOneAndDelete({ _id: req.params.id, user: userId });

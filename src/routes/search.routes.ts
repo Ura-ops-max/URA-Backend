@@ -1,10 +1,10 @@
 import { Router } from 'express';
-import { 
-  globalSearch, 
-  saveToHistory, 
-  getRecentSearches, 
-  deleteRecentSearch, 
-  clearAllRecent 
+import {
+  globalSearch,
+  saveToHistory,
+  getRecentSearches,
+  deleteRecentSearch,
+  clearAllRecent,
 } from '../controllers/search.controller';
 import { requireAuth, optionalProtect } from '../middleware/passport-auth';
 

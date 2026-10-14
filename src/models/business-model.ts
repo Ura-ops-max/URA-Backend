@@ -10,7 +10,7 @@ interface IOperatingHour {
   day: 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday';
   open: string;
   close: string;
-  isClosed?: boolean; 
+  isClosed?: boolean;
 }
 
 export interface IBusiness extends Document {
@@ -44,8 +44,8 @@ export interface IBusiness extends Document {
   operatingHours: IOperatingHour[];
   followers: Types.ObjectId[];
   likes: Types.ObjectId[]; // Added to match schema
-  averageRating: number;   // Added
-  totalReviews: number;    // Added
+  averageRating: number; // Added
+  totalReviews: number; // Added
   loanEligibility: number;
   descriptionVector?: number[];
 }
@@ -57,7 +57,7 @@ const businessSchema = new Schema<IBusiness>(
     slug: { type: String, unique: true, sparse: true, index: true, lowercase: true, trim: true },
     about: { type: String },
     tagline: { type: String },
-    category: { type: String, required: false }, 
+    category: { type: String, required: false },
     businessLogo: { type: String },
     businessCover: { type: String },
     contact: {
@@ -91,24 +91,24 @@ const businessSchema = new Schema<IBusiness>(
         day: { type: String },
         open: { type: String },
         close: { type: String },
-        isClosed: { type: Boolean, default: false } // Added for "Open Now" logic
+        isClosed: { type: Boolean, default: false }, // Added for "Open Now" logic
       },
     ],
     isVerified: { type: Boolean, default: false },
     followers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     likes: [{ type: Schema.Types.ObjectId, ref: 'User' }],
-    
+
     // RATING FIELDS (Now correctly placed inside schema fields)
-    averageRating: { 
-      type: Number, 
-      default: 0, 
-      min: 0, 
-      max: 5, 
-      index: true 
+    averageRating: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 5,
+      index: true,
     },
-    totalReviews: { 
-      type: Number, 
-      default: 0 
+    totalReviews: {
+      type: Number,
+      default: 0,
     },
 
     loanEligibility: { type: Number, default: 0 },
@@ -146,10 +146,32 @@ export const Business = model<IBusiness>('Business', businessSchema);
 // Page paths that a business slug must never collide with (kept in sync
 // with the frontend's BASE_ROUTE / reserved-word guard).
 export const RESERVED_SLUGS = new Set([
-  'about', 'contact', 'terms', 'privacy', 'faq', 'invite', 'payments',
-  'products', 'posts', 'auth', 'dashboard', 'api', 'health', 'b',
-  'login', 'register', 'signin', 'signup', 'admin', 'settings',
-  'product', 'businesses', 'explore', 'search', 'cart', 'checkout',
+  'about',
+  'contact',
+  'terms',
+  'privacy',
+  'faq',
+  'invite',
+  'payments',
+  'products',
+  'posts',
+  'auth',
+  'dashboard',
+  'api',
+  'health',
+  'b',
+  'login',
+  'register',
+  'signin',
+  'signup',
+  'admin',
+  'settings',
+  'product',
+  'businesses',
+  'explore',
+  'search',
+  'cart',
+  'checkout',
 ]);
 
 export function slugify(input: string): string {

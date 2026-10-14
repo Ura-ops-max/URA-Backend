@@ -25,7 +25,10 @@ const handleFezError = (res: Response, err: unknown) => {
 // Callers only need to send the buyer's destination state plus something that
 // identifies the seller (businessId or productId).
 export const deliveryCost = asyncHandler(async (req: Request, res: Response): Promise<void> => {
-  if (!isFezConfigured()) { notConfigured(res); return; }
+  if (!isFezConfigured()) {
+    notConfigured(res);
+    return;
+  }
 
   const { state, weight, businessId, productId } = req.body;
   let { pickUpState } = req.body;
@@ -73,22 +76,50 @@ export const deliveryCost = asyncHandler(async (req: Request, res: Response): Pr
 
 // POST /delivery/create  → create a Fez shipment for an order
 export const deliveryCreate = asyncHandler(async (req: Request, res: Response): Promise<void> => {
-  if (!isFezConfigured()) { notConfigured(res); return; }
+  if (!isFezConfigured()) {
+    notConfigured(res);
+    return;
+  }
 
   const {
-    uniqueID, recipientName, recipientPhone, recipientAddress, recipientState,
-    valueOfItem, weight, recipientEmail, itemDescription, pickUpState, pickUpAddress,
+    uniqueID,
+    recipientName,
+    recipientPhone,
+    recipientAddress,
+    recipientState,
+    valueOfItem,
+    weight,
+    recipientEmail,
+    itemDescription,
+    pickUpState,
+    pickUpAddress,
   } = req.body;
 
-  if (!uniqueID || !recipientName || !recipientPhone || !recipientAddress || !recipientState || valueOfItem == null) {
+  if (
+    !uniqueID ||
+    !recipientName ||
+    !recipientPhone ||
+    !recipientAddress ||
+    !recipientState ||
+    valueOfItem == null
+  ) {
     res.status(400).json({ success: false, message: 'Missing required delivery fields.' });
     return;
   }
 
   try {
     const result = await createDeliveryOrder({
-      uniqueID, recipientName, recipientPhone, recipientAddress, recipientState,
-      valueOfItem, weight, recipientEmail, itemDescription, pickUpState, pickUpAddress,
+      uniqueID,
+      recipientName,
+      recipientPhone,
+      recipientAddress,
+      recipientState,
+      valueOfItem,
+      weight,
+      recipientEmail,
+      itemDescription,
+      pickUpState,
+      pickUpAddress,
     });
     res.status(201).json({ success: true, trackingNo: result.trackingNo });
   } catch (err) {
@@ -98,7 +129,10 @@ export const deliveryCreate = asyncHandler(async (req: Request, res: Response): 
 
 // GET /delivery/track/:orderNumber
 export const deliveryTrack = asyncHandler(async (req: Request, res: Response): Promise<void> => {
-  if (!isFezConfigured()) { notConfigured(res); return; }
+  if (!isFezConfigured()) {
+    notConfigured(res);
+    return;
+  }
 
   try {
     const data = await trackDeliveryOrder(String(req.params.orderNumber));

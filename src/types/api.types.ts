@@ -1,4 +1,3 @@
-
 export type loginType = { email: string; password: string };
 
 export type LoginResponseType = {
@@ -41,7 +40,7 @@ export type UserType = {
   isBusinessOwner: boolean;
   profilePicture?: string;
   bio?: string; // Add this to your IUser schema if needed
-  
+
   emailVerified?: boolean;
   twoFactorEnabled?: boolean;
   lastLoginAt?: Date;
@@ -116,15 +115,14 @@ export interface CurrentUserResponseType {
   message?: string;
   user: UserType;
   // Add this line:
-  business: BusinessType | null; 
+  business: BusinessType | null;
   related: RelatedData;
 }
-
 
 export type UsernameCheckResponse = {
   available: boolean;
   message: string; // e.g., "Username is available" or "Username is taken"
-}
+};
 
 export interface Chat {
   id: string;
