@@ -87,8 +87,20 @@ export const paylukProxy = asyncHandler(async (req: Request, res: Response): Pro
       `❌ [PaylukProxy] ${req.method} ${targetPath} → ${status}`,
       axiosErr.response?.data
     );
-    res
-      .status(status)
-      .json(axiosErr.response?.data ?? { success: false, message: 'Payluk request failed' });
+    // Payluk doesn't always use `message`; surface whatever reason it gave so
+    // the app can show it instead of a generic error.
+    const data: any = axiosErr.response?.data;
+    const reason =
+      (typeof data === 'string' && data) ||
+      data?.message ||
+      data?.error?.message ||
+      data?.error ||
+      data?.msg ||
+      (axiosErr.response ? `Payluk returned ${status}` : 'Could not reach Payluk');
+    res.status(status).json({
+      ...(data && typeof data === 'object' ? data : {}),
+      success: false,
+      message: String(reason),
+    });
   }
 });
