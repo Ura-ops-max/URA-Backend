@@ -6,8 +6,9 @@ import { HTTP_STATUS } from '@/constants';
 import { Business } from '@/models/business-model';
 import { trackEvent } from '@/services/track-event.service';
 import { Post } from '@/models/post-model';
-import { Product } from '@/models/product-model';
+import { Product, VISIBLE_PRODUCT } from '@/models/product-model';
 import * as userService from '@/services/user.service';
+import { publicBusiness, countShopProducts } from '@/utils/business-public.utils';
 
 const getAuthUserId = (req: Request): string | null => {
   const user = (req as any).user;
@@ -229,10 +230,12 @@ export const getBusinessProfile = asyncHandler(
 
     const { Post } = await import('@/models/post-model');
 
-    const [posts, postCount] = await Promise.all([
+    const [posts, postCount, productCount] = await Promise.all([
       Post.find({ author: businessId, authorType: 'Business' }).sort({ createdAt: -1 }).limit(10),
       Post.countDocuments({ author: businessId, authorType: 'Business' }),
+      countShopProducts(business._id),
     ]);
+    const isOwner = !!loggedInUserId && String(business.owner) === loggedInUserId;
 
     const isFollowing = loggedInUserId
       ? business.followers.some(id => id.toString() === loggedInUserId)
@@ -242,16 +245,25 @@ export const getBusinessProfile = asyncHandler(
       ? loggedInUser.bookmarkedBusinesses.some(id => id.toString() === businessId)
       : false;
 
+    // Visitors see the owner's public profile only (no email, phone, Payluk id).
+    let owner: any = user;
+    if (!isOwner) {
+      const { _id, firstName, lastName, username, profilePicture } = user.toObject() as any;
+      owner = { _id, firstName, lastName, username, profilePicture };
+    }
+
     res.status(HTTP_STATUS.OK).json({
       success: true,
-      user,
-      business,
+      user: owner,
+      business: publicBusiness(business, isOwner),
       related: {
         isFollowing,
         isBookmarked,
+        isOwner,
         recentPosts: posts,
         counts: {
           posts: postCount,
+          products: productCount,
           followers: business.followers.length,
           following: user.followingUsers.length + user.followingBusinesses.length,
         },
@@ -348,7 +360,7 @@ export const getWishlistProducts = asyncHandler(
       return;
     }
 
-    const products = await Product.find({ likes: userId })
+    const products = await Product.find({ likes: userId, ...VISIBLE_PRODUCT })
       .sort({ updatedAt: -1 })
       .skip(skip)
       .limit(limit)

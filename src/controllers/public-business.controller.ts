@@ -8,6 +8,7 @@ import { Business, RESERVED_SLUGS } from '@/models/business-model';
 import { User } from '@/models/user-model';
 import { Post } from '@/models/post-model';
 import { config } from '@/config/env.config';
+import { publicBusiness, countShopProducts } from '@/utils/business-public.utils';
 
 const getAuthUserId = (req: Request): string | null => {
   const user = (req as any).user;
@@ -32,12 +33,14 @@ export const getPublicBusinessBySlug = asyncHandler(
       'firstName lastName username profilePicture'
     );
 
-    const [posts, postCount] = await Promise.all([
+    const [posts, postCount, productCount] = await Promise.all([
       Post.find({ author: business._id, authorType: 'Business' }).sort({ createdAt: -1 }).limit(10),
       Post.countDocuments({ author: business._id, authorType: 'Business' }),
+      countShopProducts(business._id),
     ]);
 
     const loggedInUserId = getAuthUserId(req);
+    const isOwner = !!loggedInUserId && String(business.owner) === loggedInUserId;
     let isFollowing = false;
     let isBookmarked = false;
     if (loggedInUserId) {
@@ -52,14 +55,16 @@ export const getPublicBusinessBySlug = asyncHandler(
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
-      business,
+      business: publicBusiness(business, isOwner),
       owner,
       related: {
         isFollowing,
         isBookmarked,
+        isOwner,
         recentPosts: posts,
         counts: {
           posts: postCount,
+          products: productCount,
           followers: business.followers.length,
         },
       },

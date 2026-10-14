@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { asyncHandler } from '@/middleware/errorHandler';
-import { Product } from '@/models/product-model';
+import { Product, VISIBLE_PRODUCT } from '@/models/product-model';
 import { Business } from '@/models/business-model';
 import { User } from '@/models/user-model';
 import { Wishlist } from '@/models/wishlist-model';
@@ -10,6 +10,9 @@ import { createPaymentLink, PaylukError } from '@/services/payluk.service';
 import { PRODUCT_CATEGORIES } from '@/constants/categories.constant';
 import { getAuthUserId } from '@/utils/request.utils';
 import { embedImageUrl } from '@/services/ai-embed.service';
+
+/** Make user text safe to use inside a MongoDB $regex (matched literally). */
+export const escapeRegex = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
  * Compute and store the image embedding for a product's first image so it
@@ -110,6 +113,7 @@ export const imageSearchProducts = asyncHandler(
           limit: topK,
         },
       },
+      { $match: VISIBLE_PRODUCT },
       {
         $project: {
           name: 1,
@@ -295,20 +299,31 @@ export const getMyProducts = asyncHandler(async (req: Request, res: Response): P
 export const getProductCatalog = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const currentUserId = getAuthUserId(req);
-    const { businessId, restrict, page = '1', category } = req.query;
+    const { businessId, restrict, page = '1', category, q } = req.query;
 
     const p = parseInt(page as string) || 1;
     const limit = 15;
     const skip = (p - 1) * limit;
 
-    const query: any = {};
+    const query: any = { ...VISIBLE_PRODUCT };
     if (restrict === 'true' && businessId) {
+      // A bad shop id is just "no products", not a server error.
+      if (!Types.ObjectId.isValid(String(businessId))) {
+        res.json({ success: true, posts: [], total: 0 });
+        return;
+      }
       query.business = new Types.ObjectId(businessId as string);
     }
     // Optional server-side category filter (so the storefront can filter across
     // the whole catalog, not just the page already loaded).
     if (category && category !== 'All') {
       query.category = category as string;
+    }
+    // Search inside the shop / catalog: case-insensitive, special characters
+    // escaped so the text is matched literally.
+    const search = typeof q === 'string' ? q.trim().slice(0, 60) : '';
+    if (search) {
+      query.name = { $regex: escapeRegex(search), $options: 'i' };
     }
 
     let wishlistProductIds = new Set<string>();
@@ -317,12 +332,18 @@ export const getProductCatalog = asyncHandler(
       wishlistProductIds = new Set(entries.map(w => w.product.toString()));
     }
 
-    const products = await Product.find(query)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .populate({ path: 'business', select: '_id businessName businessLogo isVerified owner slug' })
-      .lean();
+    const [products, total] = await Promise.all([
+      Product.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate({
+          path: 'business',
+          select: '_id businessName businessLogo isVerified owner slug',
+        })
+        .lean(),
+      Product.countDocuments(query),
+    ]);
 
     const formatted = products.map((product: any) => ({
       ...product,
@@ -341,7 +362,7 @@ export const getProductCatalog = asyncHandler(
       isWishlisted: wishlistProductIds.has(product._id.toString()),
     }));
 
-    res.json({ success: true, posts: formatted });
+    res.json({ success: true, posts: formatted, total });
   }
 );
 
@@ -367,7 +388,7 @@ export const getProductDetails = asyncHandler(
         .lean()
         .then(p =>
           p
-            ? Product.find({ category: p.category, _id: { $ne: id } })
+            ? Product.find({ ...VISIBLE_PRODUCT, category: p.category, _id: { $ne: id } })
                 .limit(4)
                 .select('name price media category stock')
                 .lean()
@@ -396,6 +417,12 @@ export const getProductDetails = asyncHandler(
     // Does the requester own this product? (they own the business that posted it)
     const businessOwnerId = (product.business as any)?.owner?.toString();
     const isOwner = !!currentUserId && businessOwnerId === currentUserId;
+
+    // A product switched Off is invisible to everyone but its owner.
+    if ((product as any).isHidden && !isOwner) {
+      res.status(404).json({ message: 'Product not found' });
+      return;
+    }
 
     res.status(200).json({
       success: true,

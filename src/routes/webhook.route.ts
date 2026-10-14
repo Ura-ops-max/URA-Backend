@@ -140,11 +140,12 @@ async function handleEscrowRefunded(data: Record<string, any>) {
 
   const before = await Order.findOneAndUpdate(
     { paylukPaymentToken: paymentToken, status: { $ne: OrderStatus.REFUNDED } },
-    { $set: { status: OrderStatus.REFUNDED, paymentStatus: 'failed' } }
+    { $set: { status: OrderStatus.REFUNDED, paymentStatus: 'failed', stockReserved: false } }
   ); // returns the order as it was BEFORE this update
   if (!before) return;
 
-  if (before.paymentStatus === 'paid') {
+  // Restock if stock was taken: on payment, or held at checkout and not yet released.
+  if (before.paymentStatus === 'paid' || before.stockReserved) {
     for (const item of before.items) {
       await Product.findByIdAndUpdate(item.product, { $inc: { stock: item.quantity } });
     }

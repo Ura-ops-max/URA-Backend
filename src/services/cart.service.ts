@@ -9,7 +9,7 @@ export const getCartForUser = (userId: string) =>
 
 export async function addItemToCart(userId: string, productId: string, quantity: number) {
   const product = await Product.findById(productId);
-  if (!product) {
+  if (!product || product.isHidden) {
     const e: any = new Error('Product not found');
     e.status = 404;
     throw e;
@@ -47,6 +47,11 @@ export async function addItemToCart(userId: string, productId: string, quantity:
 
 export async function updateItemQuantity(userId: string, productId: string, quantity: number) {
   const product = await Product.findById(productId);
+  if (product?.isHidden) {
+    const e: any = new Error('This item is no longer available');
+    e.status = 400;
+    throw e;
+  }
   if (product && product.stock < quantity) {
     const e: any = new Error('Requested quantity exceeds stock');
     e.status = 400;

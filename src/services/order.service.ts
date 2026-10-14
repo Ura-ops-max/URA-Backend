@@ -17,6 +17,12 @@ import {
   type CreateDeliveryInput,
 } from '@/services/fez.service';
 import { markOrderPaid, notifyOrderEvent, isPaidStatus } from '@/services/order-events.service';
+import {
+  holdItems,
+  releaseItems,
+  releaseUnpaidHolds,
+  holdExpiry,
+} from '@/services/stock-hold.service';
 
 export interface ShippingAddress {
   fullAddress: string;
@@ -91,6 +97,13 @@ export async function checkoutFromCart(
   for (const item of cart.items) {
     const p: any = item.product;
     if (!p) continue;
+    if (p.isHidden) {
+      const err: any = new Error(
+        `"${p.name}" is no longer available. Please remove it from your cart.`
+      );
+      err.status = 400;
+      throw err;
+    }
     if (p.stock < item.quantity) {
       const err: any = new Error(`"${p.name}" only has ${p.stock} unit(s) left in stock`);
       err.status = 400;
@@ -181,92 +194,106 @@ export async function checkoutFromCart(
     }
   }
 
-  // Create a fresh escrow holding ONLY the goods subtotal (the seller's payout).
-  const escrow = await createPaymentLink({
-    amount: totalAmount,
-    purpose: firstProduct.name,
-    description: firstProduct.description || firstProduct.name,
-    // Normal payment: seller bears Payluk's fee → buyer pays the clean price.
-    // Escrow: buyer bears it (the cost of protection).
-    whoPays: escrowMode === 'normal' ? 'seller' : firstProduct.whoPays || 'buyer',
-    maxDelivery: firstProduct.maxDelivery ?? 3,
-    deliveryTimeline: firstProduct.deliveryTimeline || 'days',
-    totalQuantity: cart.items.reduce((sum: number, i: any) => sum + i.quantity, 0),
-    imageUrl: firstProduct.media?.[0] ?? null,
-    customerId: sellerCustomerId!,
-  });
+  // A buyer retrying checkout shouldn't hold the same stock twice: release any
+  // hold from their earlier unpaid attempts first.
+  await releaseUnpaidHolds({ user: userId });
 
-  const paylukPaymentToken = escrow.paymentToken;
-  const paylukEscrowId = escrow.escrowId;
+  // Take the stock off the shelf now, so two buyers can't pay for the last one.
+  // Put it back if anything below fails before the order is saved.
+  await holdItems(orderItems);
+  try {
+    // Create a fresh escrow holding ONLY the goods subtotal (the seller's payout).
+    const escrow = await createPaymentLink({
+      amount: totalAmount,
+      purpose: firstProduct.name,
+      description: firstProduct.description || firstProduct.name,
+      // Normal payment: seller bears Payluk's fee → buyer pays the clean price.
+      // Escrow: buyer bears it (the cost of protection).
+      whoPays: escrowMode === 'normal' ? 'seller' : firstProduct.whoPays || 'buyer',
+      maxDelivery: firstProduct.maxDelivery ?? 3,
+      deliveryTimeline: firstProduct.deliveryTimeline || 'days',
+      totalQuantity: cart.items.reduce((sum: number, i: any) => sum + i.quantity, 0),
+      imageUrl: firstProduct.media?.[0] ?? null,
+      customerId: sellerCustomerId!,
+    });
 
-  // Route delivery + platform cut to the platform wallet, kept out of escrow.
-  // Abort if this fails so we never create an order that under-charges the buyer
-  // or leaks the delivery fee into the seller's payout.
-  if (additionalFee > 0) {
-    try {
-      await updateAdditionalFee(paylukPaymentToken, additionalFee);
-    } catch (e) {
-      console.error('[checkout] additional-fee setup failed:', (e as Error).message);
-      const err: any = new Error('Could not set up payment. Please try again.');
-      err.code = 'FEE_SETUP_FAILED';
-      err.status = 502;
-      throw err;
+    const paylukPaymentToken = escrow.paymentToken;
+    const paylukEscrowId = escrow.escrowId;
+
+    // Route delivery + platform cut to the platform wallet, kept out of escrow.
+    // Abort if this fails so we never create an order that under-charges the buyer
+    // or leaks the delivery fee into the seller's payout.
+    if (additionalFee > 0) {
+      try {
+        await updateAdditionalFee(paylukPaymentToken, additionalFee);
+      } catch (e) {
+        console.error('[checkout] additional-fee setup failed:', (e as Error).message);
+        const err: any = new Error('Could not set up payment. Please try again.');
+        err.code = 'FEE_SETUP_FAILED';
+        err.status = 502;
+        throw err;
+      }
     }
+
+    // What the buyer is actually charged.
+    // - normal: goods + delivery/platform only (seller absorbs Payluk's fee → no add-on).
+    // - escrow: goods + Payluk's fee share + delivery/platform.
+    const buyerPayable =
+      escrowMode === 'normal'
+        ? totalAmount + additionalFee
+        : (escrow.payableAmount ?? totalAmount + escrow.fee) + additionalFee;
+
+    const order = await Order.create({
+      user: userId,
+      business: firstProduct.business,
+      orderNumber: `ORD-${Date.now().toString(36).toUpperCase()}`,
+      items: orderItems,
+      // totalAmount is what the buyer is charged (items + shipping).
+      totalAmount: grandTotal,
+      deliveryFee,
+      deliveryMethod,
+      shippingAddress,
+      paymentMethod,
+      status: 'pending',
+      paymentStatus: 'pending',
+      paylukPaymentToken,
+      paylukEscrowId,
+      payment: { provider: 'payluk' },
+      stockReserved: true,
+      reservedUntil: holdExpiry(),
+    });
+
+    trackEvent({
+      targetId: (order._id as any).toString(),
+      targetModel: 'Order',
+      type: 'ACTIVITY',
+      activityData: {
+        action: 'ORDER_PLACED',
+        description: `Order ${order.orderNumber} placed — NGN ${grandTotal}`,
+        metadata: { ip, userAgent },
+      },
+    }).catch(() => {});
+
+    return {
+      order: {
+        _id: order._id,
+        orderNumber: order.orderNumber,
+        totalAmount: order.totalAmount,
+        status: order.status,
+      },
+      payluk: {
+        paymentToken: paylukPaymentToken,
+        escrowId: paylukEscrowId,
+        customerId: buyer.paylukCustomerId!,
+        fee: escrow.fee,
+        // Buyer's real charge: goods + Payluk fee + delivery + platform cut.
+        payableAmount: buyerPayable,
+      },
+    };
+  } catch (e) {
+    await releaseItems(orderItems).catch(() => {});
+    throw e;
   }
-
-  // What the buyer is actually charged.
-  // - normal: goods + delivery/platform only (seller absorbs Payluk's fee → no add-on).
-  // - escrow: goods + Payluk's fee share + delivery/platform.
-  const buyerPayable =
-    escrowMode === 'normal'
-      ? totalAmount + additionalFee
-      : (escrow.payableAmount ?? totalAmount + escrow.fee) + additionalFee;
-
-  const order = await Order.create({
-    user: userId,
-    business: firstProduct.business,
-    orderNumber: `ORD-${Date.now().toString(36).toUpperCase()}`,
-    items: orderItems,
-    // totalAmount is what the buyer is charged (items + shipping).
-    totalAmount: grandTotal,
-    deliveryFee,
-    deliveryMethod,
-    shippingAddress,
-    paymentMethod,
-    status: 'pending',
-    paymentStatus: 'pending',
-    paylukPaymentToken,
-    paylukEscrowId,
-    payment: { provider: 'payluk' },
-  });
-
-  trackEvent({
-    targetId: (order._id as any).toString(),
-    targetModel: 'Order',
-    type: 'ACTIVITY',
-    activityData: {
-      action: 'ORDER_PLACED',
-      description: `Order ${order.orderNumber} placed — NGN ${grandTotal}`,
-      metadata: { ip, userAgent },
-    },
-  }).catch(() => {});
-
-  return {
-    order: {
-      _id: order._id,
-      orderNumber: order.orderNumber,
-      totalAmount: order.totalAmount,
-      status: order.status,
-    },
-    payluk: {
-      paymentToken: paylukPaymentToken,
-      escrowId: paylukEscrowId,
-      customerId: buyer.paylukCustomerId!,
-      fee: escrow.fee,
-      // Buyer's real charge: goods + Payluk fee + delivery + platform cut.
-      payableAmount: buyerPayable,
-    },
-  };
 }
 
 /**

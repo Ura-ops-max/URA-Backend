@@ -2,7 +2,14 @@ import { Request, Response } from 'express';
 import { Business } from '@/models/business-model';
 import { User } from '@/models/user-model';
 import { Post } from '@/models/post-model';
-import { Product } from '@/models/product-model';
+import { Product, VISIBLE_PRODUCT } from '@/models/product-model';
+import { escapeRegex } from '@/controllers/product.controller';
+
+// Public fields only: no follower/like id lists, loan data, emails or phones.
+// (followers is read only to count it, then dropped.)
+const BUSINESS_PUBLIC_FIELDS = '-likes -loanEligibility -descriptionVector';
+const USER_PUBLIC_FIELDS =
+  '_id firstName lastName username profilePicture bio isBusinessOwner businessName';
 import { SearchHistory } from '../models/search-model';
 
 const getAuthUserId = (req: Request): string | null => {
@@ -31,7 +38,12 @@ export const globalSearch = async (req: Request, res: Response) => {
       rating,
     } = params;
 
-    const queryStr = String(q || '');
+    // Matched literally (special characters escaped), capped at 60 characters.
+    const queryStr = escapeRegex(
+      String(q || '')
+        .trim()
+        .slice(0, 60)
+    );
     const regex = { $regex: queryStr, $options: 'i' };
     const results: any = {};
 
@@ -46,7 +58,7 @@ export const globalSearch = async (req: Request, res: Response) => {
         bizQuery.category = category;
       }
 
-      if (city) bizQuery['address.city'] = { $regex: city, $options: 'i' };
+      if (city) bizQuery['address.city'] = { $regex: escapeRegex(String(city)), $options: 'i' };
 
       if (rating) {
         bizQuery.averageRating = { $gte: Number(rating) };
@@ -72,9 +84,16 @@ export const globalSearch = async (req: Request, res: Response) => {
       }
 
       // Added a sort so highest rated businesses appear first when filtering by rating
-      results.businesses = await Business.find(bizQuery)
+      const businesses = await Business.find(bizQuery)
         .sort(rating ? { averageRating: -1 } : { createdAt: -1 })
-        .limit(type === 'all' ? 4 : 20);
+        .limit(type === 'all' ? 4 : 20)
+        .select(BUSINESS_PUBLIC_FIELDS)
+        .lean();
+      // Send the follower count, not the list of who follows.
+      results.businesses = businesses.map(({ followers, ...b }: any) => ({
+        ...b,
+        followersCount: followers?.length ?? 0,
+      }));
     }
 
     // --- 2. USER SEARCH LOGIC ---
@@ -85,12 +104,15 @@ export const globalSearch = async (req: Request, res: Response) => {
       if (isBusiness === 'true') userQuery.isBusinessOwner = true;
       if (isBusiness === 'false') userQuery.isBusinessOwner = false;
 
-      results.users = await User.find(userQuery).limit(type === 'all' ? 4 : 20);
+      results.users = await User.find(userQuery)
+        .select(USER_PUBLIC_FIELDS)
+        .limit(type === 'all' ? 4 : 20);
     }
 
     // --- 3. PRODUCT SEARCH LOGIC ---
     if (type === 'all' || type === 'product') {
       const prodQuery: any = {
+        ...VISIBLE_PRODUCT,
         $or: [{ name: regex }, { description: regex }, { category: regex }],
       };
 
@@ -112,7 +134,8 @@ export const globalSearch = async (req: Request, res: Response) => {
       }
 
       results.products = await Product.find(prodQuery)
-        .populate('business', 'businessName businessLogo')
+        .select('-imageEmbedding -likes -paylukEscrowId -paylukPaymentToken')
+        .populate('business', 'businessName businessLogo slug')
         .sort(rating ? { averageRating: -1 } : { createdAt: -1 })
         .limit(type === 'all' ? 4 : 20);
     }
@@ -128,10 +151,16 @@ export const globalSearch = async (req: Request, res: Response) => {
         postQuery.tags = { $all: tagArray };
       }
 
-      results.posts = await Post.find(postQuery)
-        .populate('author') // Mongoose uses refPath automatically here
-        .populate('product') // Populate linked products if any
+      const posts = await Post.find(postQuery)
+        // Author is a User or a Business (refPath); keep it to public fields.
+        .populate({
+          path: 'author',
+          select: `${USER_PUBLIC_FIELDS} businessLogo slug isVerified`,
+        })
+        .populate('product', '-imageEmbedding -likes -paylukEscrowId -paylukPaymentToken')
         .limit(type === 'all' ? 4 : 20);
+      // Leave out posts for products the shop has switched Off.
+      results.posts = posts.filter((p: any) => !p.product?.isHidden);
     }
 
     res.status(200).json({ success: true, data: results });

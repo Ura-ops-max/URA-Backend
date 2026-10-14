@@ -49,6 +49,10 @@ export interface IOrder extends Document {
   /** How it reaches the buyer: Fez rider, buyer collects, or the shop delivers itself. */
   fulfilment?: 'fez' | 'pickup' | 'seller_delivery';
   orderNumber: string;
+  /** Stock was taken off the shelf at checkout and not yet released. */
+  stockReserved?: boolean;
+  /** Unpaid by then → the held stock goes back on the shelf. */
+  reservedUntil?: Date;
 }
 
 const OrderSchema: Schema = new Schema(
@@ -98,8 +102,13 @@ const OrderSchema: Schema = new Schema(
     paidAt: Date,
     trackingNumber: { type: String },
     fulfilment: { type: String, enum: ['fez', 'pickup', 'seller_delivery'] },
+    stockReserved: { type: Boolean, default: false },
+    reservedUntil: { type: Date },
   },
   { timestamps: true }
 );
+
+// Finds expired holds quickly.
+OrderSchema.index({ paymentStatus: 1, stockReserved: 1, reservedUntil: 1 });
 
 export default mongoose.model<IOrder>('Order', OrderSchema);

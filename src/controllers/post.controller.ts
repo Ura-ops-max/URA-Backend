@@ -19,17 +19,21 @@ async function getBookmarkedIds(userId: string | null): Promise<string[]> {
 }
 
 async function populateFeed(query: any, skip: number, limit: number) {
-  return Post.find(query)
-    .sort({ createdAt: -1 })
-    .skip(skip)
-    .limit(limit)
-    .populate({
-      path: 'author',
-      select:
-        '_id username firstName lastName profilePicture businessName businessLogo isVerified slug',
-    })
-    .populate('product')
-    .lean();
+  return (
+    Post.find(query)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate({
+        path: 'author',
+        select:
+          '_id username firstName lastName profilePicture businessName businessLogo isVerified slug',
+      })
+      .populate('product', '-imageEmbedding')
+      .lean()
+      // Products the shop has switched Off don't show in feeds.
+      .then(posts => posts.filter((p: any) => !p.product?.isHidden))
+  );
 }
 
 // ─── Unified Feed ────────────────────────────────────────────────────────────

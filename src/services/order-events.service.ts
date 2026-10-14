@@ -63,10 +63,16 @@ export async function markOrderPaid(
   );
   if (!order) return null; // already handled
 
-  // Deduct stock. Money has already been taken, so never fail the payment over
-  // stock — instead floor at zero and warn the seller.
+  // Stock held at checkout was already taken off the shelf — keep it that way.
+  // Otherwise (no hold, or the hold expired before the money arrived) deduct
+  // now. Money has already been taken, so never fail the payment over stock —
+  // instead floor at zero and warn the seller.
   const shortItems: string[] = [];
-  for (const item of order.items) {
+  const stockAlreadyTaken = order.stockReserved === true;
+  if (stockAlreadyTaken) {
+    await Order.updateOne({ _id: order._id }, { $set: { stockReserved: false } });
+  }
+  for (const item of stockAlreadyTaken ? [] : order.items) {
     const res = await Product.updateOne(
       { _id: item.product, stock: { $gte: item.quantity } },
       { $inc: { stock: -item.quantity } }
