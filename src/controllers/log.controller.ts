@@ -32,7 +32,7 @@ export const markAsRead = asyncHandler(async (req: Request, res: Response) => {
   const { ids } = req.body;   // For bulk selection via Body
   const allRecipientIds = await getRecipientIds(req);
 
-  let query: any = { recipient: { $in: allRecipientIds }, isRead: false };
+  const query: any = { recipient: { $in: allRecipientIds }, isRead: false };
 
   // 1. Handle Bulk Selection from Desktop Checkboxes
   if (ids && Array.isArray(ids)) {
@@ -54,7 +54,7 @@ export const deleteNotification = asyncHandler(async (req: Request, res: Respons
   const { ids } = req.body; // Support for bulk delete
   const allRecipientIds = await getRecipientIds(req);
 
-  let query: any = { recipient: { $in: allRecipientIds } };
+  const query: any = { recipient: { $in: allRecipientIds } };
 
   if (ids && Array.isArray(ids)) {
     query._id = { $in: ids };

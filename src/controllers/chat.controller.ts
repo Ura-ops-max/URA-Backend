@@ -220,7 +220,7 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
     const newMessage = await Message.create({
       conversation: conversationId,
       sender: senderId,
-      senderModel: senderModel,
+      senderModel,
       content,
       media,
       status: 'sent'
@@ -264,7 +264,7 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
       if (receiverId) {
         io.to(receiverId).emit('new_notification', {
           type: 'MESSAGE',
-          conversationId: conversationId,
+          conversationId,
           unreadCount: conversation.unreadCount.get(receiverId)
         });
       }

@@ -390,7 +390,9 @@ export const logout = asyncHandler(async (req: Request, res: Response): Promise<
       const decoded = verifyToken(accessToken) as any;
       const expiresAt = new Date(decoded.exp * 1000);
       await blacklistToken(accessToken, 'access', user.id, expiresAt);
-    } catch (e) { }
+    } catch {
+      // Token already expired or invalid — nothing to blacklist; logout still succeeds.
+    }
   }
 
   if (refreshToken) {
@@ -398,7 +400,9 @@ export const logout = asyncHandler(async (req: Request, res: Response): Promise<
       const decoded = verifyToken(refreshToken, true) as any;
       const expiresAt = new Date(decoded.exp * 1000);
       await blacklistToken(refreshToken, 'refresh', user.id, expiresAt);
-    } catch (e) { }
+    } catch {
+      // Token already expired or invalid — nothing to blacklist; logout still succeeds.
+    }
   }
 
   res.status(HTTP_STATUS.OK).json({ success: true, message: 'Logged out successfully' });

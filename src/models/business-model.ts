@@ -133,7 +133,6 @@ businessSchema.pre<IBusiness>('save', async function (next) {
   const base = slugify(this.businessName) || 'business';
   let candidate = RESERVED_SLUGS.has(base) ? `${base}-biz` : base;
   let n = 2;
-  // eslint-disable-next-line no-constant-condition
   while (await BusinessModel.findOne({ slug: candidate }).select('_id').lean()) {
     candidate = `${base}-${n++}`;
   }

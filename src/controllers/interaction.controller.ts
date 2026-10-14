@@ -124,7 +124,7 @@ export const toggleBookmark = asyncHandler(async (req: Request, res: Response): 
     // If it's a business, notify the business owner
     if (targetType === 'Business') {
       await trackEvent({
-          targetId: targetId, // The Business ID
+          targetId, // The Business ID
           targetModel: 'Business',
           type: 'NOTIFICATION',
           notificationData: {
@@ -182,7 +182,7 @@ export const toggleFollow = asyncHandler(async (req: Request, res: Response): Pr
 
     // Notify the recipient
       await trackEvent({
-          targetId: targetId,
+          targetId,
           targetModel: isBusiness ? 'Business' : 'User',
           type: 'NOTIFICATION',
           notificationData: {

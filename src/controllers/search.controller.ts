@@ -39,7 +39,7 @@ export const globalSearch = async (req: Request, res: Response) => {
 
         // --- 1. BUSINESS SEARCH LOGIC ---
         if (type === 'all' || type === 'business') {
-            let bizQuery: any = {
+            const bizQuery: any = {
                 $or: [{ businessName: regex }, { about: regex }, { tagline: regex }, { category: regex }]
             };
 
@@ -80,7 +80,7 @@ export const globalSearch = async (req: Request, res: Response) => {
 
         // --- 2. USER SEARCH LOGIC ---
         if (type === 'all' || type === 'user') {
-            let userQuery: any = {
+            const userQuery: any = {
                 $or: [{ firstName: regex }, { lastName: regex }, { username: regex }]
             };
             if (isBusiness === 'true') userQuery.isBusinessOwner = true;
@@ -91,7 +91,7 @@ export const globalSearch = async (req: Request, res: Response) => {
 
         // --- 3. PRODUCT SEARCH LOGIC ---
         if (type === 'all' || type === 'product') {
-            let prodQuery: any = {
+            const prodQuery: any = {
                 $or: [{ name: regex }, { description: regex }, { category: regex }]
             };
 
@@ -120,7 +120,7 @@ export const globalSearch = async (req: Request, res: Response) => {
 
         // --- 4. POST SEARCH LOGIC ---
         if (type === 'all' || type === 'post') {
-            let postQuery: any = {
+            const postQuery: any = {
                 $or: [
                     { caption: regex },
                     { tags: { $in: [new RegExp(queryStr, 'i')] } }

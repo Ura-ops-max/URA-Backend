@@ -67,7 +67,7 @@ export const getSocialPosts = asyncHandler(async (req: Request, res: Response): 
   const limit = 15;
   const skip  = (p - 1) * limit;
 
-  let query: any = {};
+  const query: any = {};
   if (restrict === 'true' && authorId) {
     query.author = new Types.ObjectId(authorId as string);
   } else if (authorId) {
