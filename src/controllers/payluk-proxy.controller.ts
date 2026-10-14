@@ -33,7 +33,8 @@ const paylukProxyAxios = axios.create({
 // The only Payluk paths the URA app ever calls. Everything else is refused.
 const ALLOWED_PATHS: RegExp[] = [
   /^\/wallet\/?$/,
-  /^\/payment\/(virtual-account|bank-list|verify-account|create-intent|verify|history|escrow)\/?$/,
+  // (virtual-account was removed: Payluk discontinued it under CBN rules.)
+  /^\/payment\/(bank-list|verify-account|create-intent|verify|history|escrow)\/?$/,
   /^\/escrow\/transactions\/?$/,
   /^\/escrow\/(claim-funds|confirm-payment|submit-dispute)\/[^/]+\/?$/,
 ];
