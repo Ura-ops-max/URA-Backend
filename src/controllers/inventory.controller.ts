@@ -100,7 +100,7 @@ async function ownerBusiness(req: Request, res: Response) {
  * Matching: by SKU; without a SKU, by exact name. Never guesses: a name that
  * matches two products, or a SKU repeated in the file, is a problem row.
  */
-async function checkRows(businessId: Types.ObjectId, rawRows: InventoryRow[]) {
+export async function checkRows(businessId: Types.ObjectId, rawRows: InventoryRow[]) {
   const existing = await Product.find({ business: businessId })
     .select('_id name sku price stock category description unit barcode')
     .lean();

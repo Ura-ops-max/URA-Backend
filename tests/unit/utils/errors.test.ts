@@ -1,5 +1,5 @@
 import { AppError, ValidationError, AuthenticationError, NotFoundError } from '../../../src/utils/errors';
-import { HTTP_STATUS } from '../../../src/config/constants';
+import { HTTP_STATUS } from '../../../src/constants';
 
 describe('Error Classes', () => {
   describe('AppError', () => {
@@ -25,7 +25,7 @@ describe('Error Classes', () => {
 
   describe('ValidationError', () => {
     it('should create a ValidationError with correct properties', () => {
-      const details = [{ field: 'email', message: 'Email is required' }];
+      const details = [{ field: 'email', message: 'Email is required', location: 'body' as const }];
       const error = new ValidationError('Validation failed', details);
       
       expect(error.message).toBe('Validation failed');
