@@ -8,7 +8,7 @@ import { Types } from 'mongoose';
 import { trackEvent } from '@/services/track-event.service';
 import { getAuthUserId } from '@/utils/request.utils';
 import { buildFeedPost } from '@/helpers/feed.helper';
-import { tryCreateEscrow } from '@/controllers/product.controller';
+import { toPaylukDeliveryWindow } from '@/utils/delivery-window.utils';
 
 // ─── Feed helpers ─────────────────────────────────────────────────────────────
 
@@ -198,30 +198,11 @@ export const createPost = asyncHandler(async (req: Request, res: Response): Prom
         stock,
         size,
         media: media ?? [],
+        // The seller's Buyer-Protected settings; checkout creates the escrow.
+        whoPays: whoPays || 'buyer',
+        ...toPaylukDeliveryWindow(maxDelivery, deliveryTimeline),
       });
       finalProductId = newProduct._id;
-
-      const user = await User.findById(userId).select('paylukCustomerId');
-      if (user?.paylukCustomerId) {
-        tryCreateEscrow({
-          productId: newProduct._id.toString(),
-          productName,
-          description,
-          price,
-          stock,
-          imageUrl: media?.[0] ?? null,
-          whoPays: whoPays || 'buyer',
-          maxDelivery: maxDelivery ?? 3,
-          deliveryTimeline: deliveryTimeline || 'days',
-          paylukCustomerId: user.paylukCustomerId,
-        }).catch(() => {
-          /* logged inside */
-        });
-      } else {
-        console.warn(
-          `⚠️ [Payluk] No paylukCustomerId for business ${business._id} — escrow skipped.`
-        );
-      }
 
       trackEvent({
         targetId: userId,

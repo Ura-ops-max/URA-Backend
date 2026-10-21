@@ -16,6 +16,11 @@ export interface IProduct extends Document {
   unit?: string;
   /** Switched "Off" by the owner: hidden from shoppers, can't be bought. */
   isHidden?: boolean;
+  /** Buyer-Protected Payment: who pays Payluk's fee (the seller's choice). */
+  whoPays?: 'buyer' | 'seller' | 'both';
+  /** Delivery window for the escrow (Payluk: 1..365 minutes/hours/days). */
+  maxDelivery?: number;
+  deliveryTimeline?: 'minutes' | 'hours' | 'days';
   likes: Types.ObjectId[];
   averageRating: number;
   totalReviews: number;
@@ -47,6 +52,9 @@ export const productSchema = new Schema<IProduct>(
     barcode: { type: String, trim: true },
     unit: { type: String, trim: true },
     isHidden: { type: Boolean, default: false, index: true },
+    whoPays: { type: String, enum: ['buyer', 'seller', 'both'] },
+    maxDelivery: { type: Number },
+    deliveryTimeline: { type: String, enum: ['minutes', 'hours', 'days'] },
     likes: [{ type: Schema.Types.ObjectId, ref: 'User' }],
 
     // Vector for Atlas image search (select:false — never sent to clients).

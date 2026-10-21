@@ -76,9 +76,12 @@ export const createOrderFromCart = async (req: Request, res: Response) => {
     if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
     const { paymentMethod, deliveryMethod } = req.body;
-    // 'normal' = buyer pays the clean price, seller absorbs Payluk's fee (like
-    // Paystack). 'escrow' (default) = buyer pays the fee for held protection.
-    const escrowMode = req.body.escrowMode === 'normal' ? 'normal' : 'escrow';
+    // normal = paid straight to the seller; protected (default) = held until the
+    // buyer confirms. `escrowMode` is the older name, still accepted.
+    const paymentType =
+      req.body.paymentType === 'normal' || req.body.escrowMode === 'normal'
+        ? 'normal'
+        : 'protected';
     const bodyAddress = req.body.shippingAddress;
     // Only the delivery option carries a shipping cost; direct payment sends 0.
     const deliveryFee =
@@ -108,13 +111,13 @@ export const createOrderFromCart = async (req: Request, res: Response) => {
     const result = await orderService.checkoutFromCart(
       userId,
       shippingAddress,
-      paymentMethod,
+      paymentMethod || 'card',
       req.ip,
       req.headers['user-agent'] as string,
       {
         deliveryFee,
         deliveryMethod: deliveryMethod === 'delivery' ? 'delivery' : 'pickup',
-        escrowMode,
+        paymentType,
       }
     );
     return res
@@ -127,25 +130,6 @@ export const createOrderFromCart = async (req: Request, res: Response) => {
       code: error.code,
       message: error.message || 'Order creation failed',
     });
-  }
-};
-
-// ─── Confirm payment (client-side fallback) ───────────────────────────────────
-
-export const confirmOrderPayment = async (req: Request, res: Response) => {
-  try {
-    const userId = getAuthUserId(req);
-    if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
-    const { paymentId } = req.body;
-    if (!paymentId)
-      return res.status(400).json({ success: false, message: 'paymentId is required' });
-
-    const result = await orderService.confirmPayment(userId, paymentId);
-    return res.status(200).json({ success: true, ...result });
-  } catch (error: any) {
-    return res
-      .status(error.status || 500)
-      .json({ success: false, message: error.message || 'Failed to confirm payment' });
   }
 };
 

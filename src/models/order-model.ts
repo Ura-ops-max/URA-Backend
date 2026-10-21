@@ -53,6 +53,40 @@ export interface IOrder extends Document {
   stockReserved?: boolean;
   /** Unpaid by then → the held stock goes back on the shelf. */
   reservedUntil?: Date;
+
+  // ── Payluk payment (all optional; older orders don't have them) ──────────
+  /** normal = released to the seller as soon as it's paid; protected = held. */
+  paymentType?: 'normal' | 'protected';
+  /** Checkout references sent to the SDK, one per attempt (unique per attempt). */
+  paylukReferences?: string[];
+  /** Last escrow state/status we saw from Payluk. */
+  paylukState?: string;
+  paylukStatus?: string;
+  /** Goods subtotal = the escrow amount = the seller's payout before fees. */
+  itemsTotal?: number;
+  /** URA's platform charge, in additionalFee with delivery. */
+  platformFee?: number;
+  /** Delivery fee charged to the buyer (= Fez quote at checkout). */
+  deliveryFeeCharged?: number;
+  /** What Fez quoted for the delivery. URA pays Fez from its own account. */
+  fezCost?: number;
+  riderBookedAt?: Date;
+  /** Payluk paid URA's additionalFee (payment.delivery.success). */
+  deliveryFeeReceived?: number;
+  deliveryFeeReceivedAt?: Date;
+  /** Payluk paid URA's commission share (payment.commission.success). */
+  commissionReceived?: number;
+  commissionReceivedAt?: Date;
+  /** Normal orders: release requested from Payluk. */
+  releaseRequestedAt?: Date;
+  /** The escrow completed/claimed: the seller has been paid. */
+  payoutReleasedAt?: Date;
+  /** Buyer-Protected disputes. */
+  disputeStatus?: 'open' | 'investigating' | 'refunded' | 'split' | 'resolved';
+  disputedAt?: Date;
+  splitDetails?: { sellerAmount?: number; buyerAmount?: number; pool?: number };
+  /** Needs a person: e.g. Payluk refused the release with 401. */
+  adminFlag?: { reason: string; at: Date };
 }
 
 const OrderSchema: Schema = new Schema(
@@ -104,11 +138,36 @@ const OrderSchema: Schema = new Schema(
     fulfilment: { type: String, enum: ['fez', 'pickup', 'seller_delivery'] },
     stockReserved: { type: Boolean, default: false },
     reservedUntil: { type: Date },
+
+    paymentType: { type: String, enum: ['normal', 'protected'] },
+    paylukReferences: { type: [String], default: undefined },
+    paylukState: { type: String },
+    paylukStatus: { type: String },
+    itemsTotal: { type: Number },
+    platformFee: { type: Number },
+    deliveryFeeCharged: { type: Number },
+    fezCost: { type: Number },
+    riderBookedAt: { type: Date },
+    deliveryFeeReceived: { type: Number },
+    deliveryFeeReceivedAt: { type: Date },
+    commissionReceived: { type: Number },
+    commissionReceivedAt: { type: Date },
+    releaseRequestedAt: { type: Date },
+    payoutReleasedAt: { type: Date },
+    disputeStatus: {
+      type: String,
+      enum: ['open', 'investigating', 'refunded', 'split', 'resolved'],
+    },
+    disputedAt: { type: Date },
+    splitDetails: { sellerAmount: Number, buyerAmount: Number, pool: Number },
+    adminFlag: { reason: String, at: Date },
   },
   { timestamps: true }
 );
 
 // Finds expired holds quickly.
 OrderSchema.index({ paymentStatus: 1, stockReserved: 1, reservedUntil: 1 });
+// Webhooks find the order by Payluk's escrow id.
+OrderSchema.index({ paylukEscrowId: 1 });
 
 export default mongoose.model<IOrder>('Order', OrderSchema);

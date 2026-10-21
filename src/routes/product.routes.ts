@@ -11,7 +11,6 @@ import {
   getProductCatalog,
   getProductCategories,
   getProductDetails,
-  setupProductEscrow,
   imageSearchProducts,
 } from '@/controllers/product.controller';
 import {
@@ -40,9 +39,6 @@ router.post('/', requireAuth, validateRequest(createProductSchema), createProduc
 router.get('/:id', optionalProtect, getProductDetails); // GET    /products/:id
 router.patch('/:id', requireAuth, validateRequest(updateProductSchema), updateProduct); // PATCH  /products/:id
 router.delete('/:id', requireAuth, deleteProduct); // DELETE /products/:id
-
-// Escrow setup (retroactive for products created before Payluk was live)
-router.post('/:id/escrow', requireAuth, setupProductEscrow); // POST /products/:id/escrow
 
 // Interactions
 router.patch('/wishlist/:targetId', requireAuth, toggleWishlist);

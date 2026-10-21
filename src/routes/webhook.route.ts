@@ -1,170 +1,102 @@
+/**
+ * Payluk webhook: POST /api/v1/webhooks/payluk
+ *
+ * Docs (Webhooks): Payluk signs the RAW JSON body with HMAC-SHA512, keyed with
+ * the environment's SECRET KEY, hex, in `x-payluk-signature`. It waits up to
+ * 10 seconds, retries up to 3 times, and may send events more than once and
+ * out of order.
+ *
+ * So this route only: checks the signature, records the event once
+ * (de-duplicated), queues the work, and answers 200 at once. The work itself
+ * runs in the background worker (services/payluk-jobs.service.ts), which
+ * treats data.status / data.state as the truth.
+ */
 import express from 'express';
 import crypto from 'crypto';
-import Order, { OrderStatus } from '@/models/order-model';
-import { Product } from '@/models/product-model';
-import { markOrderPaid, notifyOrderEvent } from '@/services/order-events.service';
+import { PaylukWebhookEvent } from '@/models/payluk-webhook-event-model';
+import { PaylukJob } from '@/models/payluk-job-model';
 
 const router = express.Router();
 
-// ---------------------------------------------------------------------------
-// Payluk signs the payload using:
-//   HMAC-SHA512(JSON.stringify(req.body), secretKey)
-// The result is compared with req.headers['x-payluk-signature'] as a hex string.
-// ---------------------------------------------------------------------------
-function verifySignature(body: unknown, signatureHeader: string): boolean {
-  const secret = process.env.PAYLUK_WEBHOOK_SECRET;
-  if (!secret) {
-    console.error('[webhook] PAYLUK_WEBHOOK_SECRET is not configured');
-    return false;
-  }
-  const computed = crypto.createHmac('sha512', secret).update(JSON.stringify(body)).digest('hex');
-  // Constant-time comparison to prevent timing attacks
-  return crypto.timingSafeEqual(Buffer.from(computed), Buffer.from(signatureHeader));
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Constant-time check of x-payluk-signature against the raw body. */
+export function verifyPaylukSignature(
+  rawBody: Buffer | undefined,
+  signature: string,
+  secret: string
+): boolean {
+  if (!rawBody || !secret || !/^[0-9a-f]{128}$/i.test(signature)) return false;
+  const expected = crypto.createHmac('sha512', secret).update(rawBody).digest('hex');
+  return crypto.timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(signature, 'hex'));
 }
 
-// ---------------------------------------------------------------------------
-// POST /payluk  (mounted at /api/v1/webhooks/payluk in routes/index.ts)
-// This route relies on express.json() having already parsed the body.
-// ---------------------------------------------------------------------------
+/** De-duplication key (docs: Be idempotent). */
+export function webhookKey(event: string, data: Record<string, any>): string | null {
+  if (event.startsWith('escrow.')) return data?.id ? `escrow:${data.id}:${event}` : null;
+  if (event.startsWith('payment.'))
+    return data?.reference ? `payment:${data.reference}:${event}` : null;
+  return null;
+}
+
+/** Events URA acts on; anything else is acknowledged and ignored. */
+const HANDLED = /^(escrow\.[a-z]+|payment\.(escrow|delivery|commission)\.success)$/;
+
 router.post('/payluk', async (req, res) => {
-  if (!process.env.PAYLUK_WEBHOOK_SECRET) {
-    console.error('[webhook] PAYLUK_WEBHOOK_SECRET not set — rejecting');
-    return res.status(500).json({ ok: false, message: 'Webhook secret not configured' });
+  const secret = process.env.PAYLUK_SECRET_KEY || '';
+  if (!secret) {
+    console.error('[webhook] PAYLUK_SECRET_KEY is not set; cannot verify Payluk webhooks');
+    return res.status(500).json({ ok: false });
   }
 
-  const signatureHeader = (req.headers['x-payluk-signature'] as string) || '';
-  if (!signatureHeader) {
-    console.warn('[webhook] Missing x-payluk-signature header');
-    return res.status(401).json({ ok: false, message: 'Missing signature' });
-  }
-
-  // Both buffers must be the same length for timingSafeEqual
-  if (signatureHeader.length !== 128) {
-    // sha512 hex is always 128 chars
-    console.warn('[webhook] Malformed signature header (wrong length)');
+  const signature = String(req.headers['x-payluk-signature'] || '');
+  if (!verifyPaylukSignature((req as any).rawBody, signature, secret)) {
+    console.warn('[webhook] rejected: missing or invalid x-payluk-signature');
     return res.status(401).json({ ok: false, message: 'Invalid signature' });
   }
 
-  if (!verifySignature(req.body, signatureHeader)) {
-    console.warn('[webhook] Invalid Payluk signature');
-    return res.status(401).json({ ok: false, message: 'Invalid signature' });
-  }
+  const event = String(req.body?.event || '');
+  const data = (req.body?.data || {}) as Record<string, any>;
+  const key = webhookKey(event, data);
 
-  const payload = req.body;
-  const event: string = payload?.event || '';
-  const data = payload?.data || {};
+  // Trace line for every event, without secrets.
+  console.log(
+    `[webhook] ${event} escrow=${data.id ?? data.escrowDetails?.escrowId ?? '-'} ref=${data.reference ?? '-'} status=${data.status ?? '-'} state=${data.state ?? '-'} env=${data.environment ?? '-'}`
+  );
 
-  // ── Event routing ─────────────────────────────────────────────────────────
+  if (!key || !HANDLED.test(event)) return res.status(200).json({ ok: true, ignored: true });
+
   try {
-    switch (event) {
-      case 'escrow.ongoing':
-        // Buyer payment received — money is in escrow
-        await handlePaymentReceived(data);
-        break;
-
-      case 'escrow.completed':
-        // Funds released to seller — buyer confirmed delivery (or auto-released)
-        await handleEscrowCompleted(data);
-        break;
-
-      case 'escrow.refunded':
-        await handleEscrowRefunded(data);
-        break;
-
-      case 'escrow.disputed':
-      case 'escrow.investigating':
-        await handleEscrowDisputed(data, event);
-        break;
-
-      case 'escrow.created':
-        // Nothing to do on our side — order already created before payment
-        break;
-
-      default:
-        console.log(`[webhook] Unhandled event: "${event}" — acknowledged`);
-    }
-  } catch (err: any) {
-    console.error(`[webhook] Error handling event "${event}":`, err?.message || err);
-    return res.status(500).json({ ok: false, message: 'Server error' });
+    await PaylukWebhookEvent.create({
+      key,
+      event,
+      escrowId: data.id ?? data.escrowDetails?.escrowId,
+      reference: data.reference,
+      status: data.status,
+      state: data.state,
+      environment: data.environment,
+    });
+  } catch (e: any) {
+    if (e?.code === 11000) return res.status(200).json({ ok: true, duplicate: true });
+    console.error('[webhook] could not record event:', e?.message);
+    return res.status(500).json({ ok: false }); // Payluk will retry
   }
 
-  // Always return 200 so Payluk does not retry
+  try {
+    const now = new Date();
+    await PaylukJob.create({
+      key: `webhook:${key}`,
+      type: 'webhook',
+      status: 'pending',
+      payload: { event, data },
+      runAt: now,
+      expiresAt: new Date(now.getTime() + DAY_MS),
+    });
+  } catch (e: any) {
+    if (e?.code !== 11000) console.error('[webhook] could not queue event:', e?.message);
+  }
+
   return res.status(200).json({ ok: true });
 });
-
-// ---------------------------------------------------------------------------
-// Handler: escrow.ongoing — buyer payment confirmed, money held in escrow.
-// markOrderPaid is atomic + idempotent and notifies buyer and seller.
-// ---------------------------------------------------------------------------
-async function handlePaymentReceived(data: Record<string, any>) {
-  const paymentToken: string | undefined = data?.paymentToken || data?.token;
-  if (!paymentToken) {
-    console.warn('[webhook] escrow.ongoing missing paymentToken');
-    return;
-  }
-
-  const order = await Order.findOne({ paylukPaymentToken: paymentToken }).sort({ createdAt: -1 });
-  if (!order) {
-    console.warn('[webhook] Order not found for paymentToken:', paymentToken);
-    return;
-  }
-
-  const transactionRef: string = data?.paymentDetails?.reference || data?.reference || paymentToken;
-
-  const updated = await markOrderPaid(order._id, transactionRef, data);
-  if (!updated) console.log('[webhook] Order already marked paid — skipping');
-}
-
-// ---------------------------------------------------------------------------
-// Handler: escrow.completed — buyer confirmed receipt, funds released to seller
-// ---------------------------------------------------------------------------
-async function handleEscrowCompleted(data: Record<string, any>) {
-  const paymentToken: string | undefined = data?.paymentToken || data?.token;
-  if (!paymentToken) return;
-
-  const order = await Order.findOneAndUpdate(
-    { paylukPaymentToken: paymentToken, status: { $ne: OrderStatus.DELIVERED } },
-    { $set: { status: OrderStatus.DELIVERED } },
-    { new: true }
-  );
-  if (!order) return;
-  notifyOrderEvent(order, 'DELIVERED').catch(() => {});
-}
-
-// ---------------------------------------------------------------------------
-// Handler: escrow.refunded — only restock if stock was actually taken (paid)
-// ---------------------------------------------------------------------------
-async function handleEscrowRefunded(data: Record<string, any>) {
-  const paymentToken: string | undefined = data?.paymentToken || data?.token;
-  if (!paymentToken) return;
-
-  const before = await Order.findOneAndUpdate(
-    { paylukPaymentToken: paymentToken, status: { $ne: OrderStatus.REFUNDED } },
-    { $set: { status: OrderStatus.REFUNDED, paymentStatus: 'failed', stockReserved: false } }
-  ); // returns the order as it was BEFORE this update
-  if (!before) return;
-
-  // Restock if stock was taken: on payment, or held at checkout and not yet released.
-  if (before.paymentStatus === 'paid' || before.stockReserved) {
-    for (const item of before.items) {
-      await Product.findByIdAndUpdate(item.product, { $inc: { stock: item.quantity } });
-    }
-  }
-  const order = await Order.findById(before._id);
-  if (order) notifyOrderEvent(order, 'REFUNDED').catch(() => {});
-}
-
-// ---------------------------------------------------------------------------
-// Handler: escrow.disputed / escrow.investigating
-// ---------------------------------------------------------------------------
-async function handleEscrowDisputed(data: Record<string, any>, event: string) {
-  const paymentToken: string | undefined = data?.paymentToken || data?.token;
-  if (!paymentToken) return;
-
-  const order = await Order.findOne({ paylukPaymentToken: paymentToken });
-  if (!order) return;
-  console.log(`[webhook] ${event} for order ${order.orderNumber}`);
-  notifyOrderEvent(order, 'DISPUTED').catch(() => {});
-}
 
 export default router;

@@ -12,6 +12,7 @@ import http from 'http';
 import { socketService } from '@/services/socket.service';
 import { startImageIndexSweep } from '@/services/image-index-sweep.service';
 import { startStockHoldSweep } from '@/services/stock-hold.service';
+import { startPaylukWorker } from '@/services/payluk-jobs.service';
 
 // Import routes
 import routes from './routes';
@@ -67,7 +68,16 @@ const limiter = rateLimit({
 app.use(limiter);
 
 // Body parsing middleware
-app.use(express.json({ limit: '10mb' }));
+app.use(
+  express.json({
+    limit: '10mb',
+    // Payluk signs the RAW request bytes (HMAC-SHA512). Keep them for the
+    // webhook route only, so the signature can be checked byte for byte.
+    verify: (req, _res, buf) => {
+      if ((req as any).originalUrl?.startsWith('/api/v1/webhooks/')) (req as any).rawBody = buf;
+    },
+  })
+);
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Initialize Passport
@@ -122,6 +132,7 @@ const startServer = async (): Promise<void> => {
       // Keep image search complete: embed any product that slipped through.
       startImageIndexSweep();
       startStockHoldSweep();
+      startPaylukWorker();
     });
 
     // Graceful shutdown

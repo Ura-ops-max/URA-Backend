@@ -23,20 +23,11 @@ export type OrderEvent =
   | 'DELIVERED'
   | 'REFUNDED'
   | 'DISPUTED'
+  | 'PAYOUT_RELEASED' // Normal Payment: released to the seller straight away
+  | 'SPLIT' // dispute resolved by dividing the money
   | 'DELIVERY_BOOKING_FAILED';
 
 const naira = (n: number) => `₦${Number(n || 0).toLocaleString('en-NG')}`;
-
-/** Which Payluk escrow statuses mean "the buyer's money has arrived". */
-export const isPaidStatus = (status?: string): boolean => {
-  const allowed = (
-    process.env.PAYLUK_PAID_STATUSES || 'ongoing,paid,success,successful,completed,funded'
-  )
-    .split(',')
-    .map(s => s.trim().toLowerCase())
-    .filter(Boolean);
-  return !!status && allowed.includes(String(status).toLowerCase());
-};
 
 /**
  * Mark an order paid exactly once. The status flip is a single atomic update,
@@ -131,21 +122,34 @@ export async function notifyOrderEvent(
   const orderLink = `/dashboard/orders/${order._id}`;
   const pickupAddress = business.address?.fullAddress || business.address?.city || 'the shop';
 
+  const isNormal = order.paymentType === 'normal';
+  const nextStep =
+    order.deliveryMethod === 'delivery'
+      ? ' (delivery is paid to Fez separately). Tap "Book delivery" when it is ready.'
+      : '. Tap "Ready for pickup", or "I\'ll deliver it myself".';
+
   const copy: Record<OrderEvent, { buyer?: [string, string]; seller?: [string, string] }> = {
-    PAID: {
-      buyer: [
-        'Payment confirmed',
-        `Your order ${order.orderNumber} from ${shopName} is paid (${total}). The seller is preparing it.`,
-      ],
-      seller: [
-        'New paid order',
-        `${buyerName} paid for ${itemsText}. You'll receive ${itemsTotal} for the items when the buyer confirms they got them${
-          order.deliveryMethod === 'delivery'
-            ? ' (delivery is paid to Fez separately). Tap "Book delivery" when it is ready.'
-            : '. Tap "Ready for pickup", or "I\'ll deliver it myself".'
-        }`,
-      ],
-    },
+    PAID: isNormal
+      ? {
+          buyer: [
+            'Payment confirmed',
+            `Your order ${order.orderNumber} from ${shopName} is paid (${total}). The seller is preparing it.`,
+          ],
+          seller: [
+            'New paid order',
+            `${buyerName} paid for ${itemsText}. ${itemsTotal} for the items is being paid to your wallet now (Normal Payment)${nextStep}`,
+          ],
+        }
+      : {
+          buyer: [
+            'Payment confirmed',
+            `Your order ${order.orderNumber} from ${shopName} is paid (${total}). The seller is preparing it.`,
+          ],
+          seller: [
+            'New paid order',
+            `${buyerName} paid for ${itemsText}. You'll receive ${itemsTotal} for the items when the buyer confirms they got them${nextStep}`,
+          ],
+        },
     SHIPPED: {
       buyer: [
         'Your order is on its way',
@@ -198,6 +202,22 @@ export async function notifyOrderEvent(
       seller: [
         'Dispute opened',
         `A dispute is open on order ${order.orderNumber}. Funds are on hold while Payluk reviews it.`,
+      ],
+    },
+    PAYOUT_RELEASED: {
+      seller: [
+        'Paid to your wallet',
+        `${itemsTotal} for order ${order.orderNumber} has been paid to your wallet.`,
+      ],
+    },
+    SPLIT: {
+      buyer: [
+        'Dispute resolved',
+        `The dispute on order ${order.orderNumber} was resolved by splitting the payment.`,
+      ],
+      seller: [
+        'Dispute resolved',
+        `The dispute on order ${order.orderNumber} was resolved by splitting the payment.`,
       ],
     },
     DELIVERY_BOOKING_FAILED: {

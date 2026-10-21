@@ -6,10 +6,10 @@ import { User } from '@/models/user-model';
 import { Wishlist } from '@/models/wishlist-model';
 import { Types } from 'mongoose';
 import { trackEvent } from '@/services/track-event.service';
-import { createPaymentLink, PaylukError } from '@/services/payluk.service';
 import { PRODUCT_CATEGORIES } from '@/constants/categories.constant';
 import { getAuthUserId } from '@/utils/request.utils';
 import { embedImageUrl } from '@/services/ai-embed.service';
+import { toPaylukDeliveryWindow } from '@/utils/delivery-window.utils';
 
 /** Make user text safe to use inside a MongoDB $regex (matched literally). */
 export const escapeRegex = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -31,51 +31,6 @@ export async function indexProductImage(
     }
   } catch (err) {
     console.error(`[image-search] failed to index ${productId}:`, (err as Error).message);
-  }
-}
-
-export async function tryCreateEscrow(opts: {
-  productId: string;
-  productName: string;
-  description: string;
-  price: number;
-  stock: number;
-  imageUrl?: string | null;
-  whoPays: 'buyer' | 'seller' | 'both';
-  maxDelivery: number;
-  deliveryTimeline: 'hours' | 'days' | 'minutes';
-  paylukCustomerId: string;
-}): Promise<{ escrowId: string; paymentToken: string } | null> {
-  try {
-    const result = await createPaymentLink({
-      amount: opts.price,
-      purpose: opts.productName,
-      description: opts.description,
-      whoPays: opts.whoPays,
-      maxDelivery: opts.maxDelivery,
-      deliveryTimeline: opts.deliveryTimeline,
-      totalQuantity: opts.stock,
-      imageUrl: opts.imageUrl ?? null,
-      customerId: opts.paylukCustomerId,
-    });
-
-    await Product.findByIdAndUpdate(opts.productId, {
-      paylukEscrowId: result.escrowId,
-      paylukPaymentToken: result.paymentToken,
-    });
-
-    console.log(
-      `✅ [Payluk] Escrow created for "${opts.productName}" (${opts.productId}):`,
-      result.escrowId
-    );
-    return { escrowId: result.escrowId, paymentToken: result.paymentToken };
-  } catch (err) {
-    const msg =
-      err instanceof PaylukError ? `Payluk ${err.statusCode}: ${err.message}` : String(err);
-    console.error(
-      `⚠️  [Payluk] Escrow failed for "${opts.productName}" (${opts.productId}) — ${msg}`
-    );
-    return null;
   }
 }
 
@@ -159,20 +114,10 @@ export const createProduct = asyncHandler(async (req: Request, res: Response): P
     deliveryTimeline,
   } = req.body;
 
-  const product = await Product.create({
-    business: business._id,
-    name,
-    category: category || 'General',
-    description,
-    price,
-    stock,
-    size,
-    media: media ?? [],
-  });
-
+  // Same rule as before: the seller needs a payment profile to list products.
+  // Checked first, so no product is created and then deleted.
   const user = await User.findById(userId).select('paylukCustomerId');
   if (!user?.paylukCustomerId) {
-    await Product.findByIdAndDelete(product._id);
     res.status(403).json({
       success: false,
       code: 'PAYLUK_SETUP_REQUIRED',
@@ -181,20 +126,21 @@ export const createProduct = asyncHandler(async (req: Request, res: Response): P
     return;
   }
 
-  // Store a template escrow on the product for reference (not used for buyer checkout).
-  // Each buyer checkout creates its own fresh escrow at order time.
-  tryCreateEscrow({
-    productId: product._id.toString(),
-    productName: name,
-    description,
+  // The seller's Buyer-Protected settings are saved on the product; each order
+  // creates its own escrow at checkout (no escrow is created here).
+  const window = toPaylukDeliveryWindow(maxDelivery, deliveryTimeline);
+  const product = await Product.create({
+    business: business._id,
+    name,
+    category: category || 'General',
+    description: description ?? '',
     price,
     stock,
-    imageUrl: media?.[0] ?? null,
+    size,
+    media: media ?? [],
     whoPays: whoPays || 'buyer',
-    maxDelivery: maxDelivery ?? 3,
-    deliveryTimeline: deliveryTimeline || 'days',
-    paylukCustomerId: user.paylukCustomerId,
-  }).catch(() => {});
+    ...window,
+  });
 
   // Index the product image for AI image search (fire-and-forget).
   indexProductImage(product._id.toString(), media?.[0] ?? null).catch(() => {});
@@ -446,69 +392,3 @@ export const getProductDetails = asyncHandler(
 export const getProductCategories = (_req: Request, res: Response): void => {
   res.status(200).json({ success: true, data: PRODUCT_CATEGORIES });
 };
-
-// ─── Setup Escrow (retroactive) ───────────────────────────────────────────────
-
-export const setupProductEscrow = asyncHandler(
-  async (req: Request, res: Response): Promise<void> => {
-    const userId = getAuthUserId(req);
-    if (!userId) {
-      res.status(401).json({ success: false, message: 'Unauthorized' });
-      return;
-    }
-
-    const { id: productId } = req.params;
-
-    const [user, product] = await Promise.all([
-      User.findById(userId).select('paylukCustomerId'),
-      Product.findById(productId),
-    ]);
-
-    if (!user?.paylukCustomerId) {
-      res.status(422).json({
-        success: false,
-        code: 'PAYLUK_PROFILE_REQUIRED',
-        message: 'Set up your payment profile before enabling product purchases.',
-      });
-      return;
-    }
-
-    if (!product) {
-      res.status(404).json({ success: false, message: 'Product not found' });
-      return;
-    }
-
-    const business = await Business.findOne({ owner: userId });
-    if (!business || product.business.toString() !== business._id.toString()) {
-      res.status(403).json({ success: false, message: 'Not your product' });
-      return;
-    }
-
-    const result = await tryCreateEscrow({
-      productId: product._id.toString(),
-      productName: product.name,
-      description: product.description ?? product.name,
-      price: product.price,
-      stock: product.stock,
-      imageUrl: product.media?.[0] ?? null,
-      whoPays: 'buyer',
-      maxDelivery: 3,
-      deliveryTimeline: 'days',
-      paylukCustomerId: user.paylukCustomerId,
-    });
-
-    if (!result) {
-      res
-        .status(502)
-        .json({ success: false, message: 'Escrow creation failed. Please try again.' });
-      return;
-    }
-
-    res.status(200).json({
-      success: true,
-      message: 'Product is now available for purchase.',
-      paylukEscrowId: result.escrowId,
-      paylukPaymentToken: result.paymentToken,
-    });
-  }
-);

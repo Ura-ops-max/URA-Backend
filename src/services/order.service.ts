@@ -4,19 +4,14 @@ import Cart from '@/models/cart-model';
 import { User } from '@/models/user-model';
 import { Business } from '@/models/business-model';
 import { trackEvent } from '@/services/track-event.service';
-import {
-  createPaymentLink,
-  createPaylukCustomer,
-  updateAdditionalFee,
-  verifyPaymentToken,
-} from '@/services/payluk.service';
+import { createPaylukCustomer } from '@/services/payluk.service';
 import {
   createDeliveryOrder,
   isFezConfigured,
   getDeliveryCost,
   type CreateDeliveryInput,
 } from '@/services/fez.service';
-import { markOrderPaid, notifyOrderEvent, isPaidStatus } from '@/services/order-events.service';
+import { notifyOrderEvent } from '@/services/order-events.service';
 import {
   holdItems,
   releaseItems,
@@ -32,16 +27,20 @@ export interface ShippingAddress {
   phone: string;
 }
 
+export type PaymentType = 'normal' | 'protected';
+
 export interface CheckoutResult {
-  order: { _id: unknown; orderNumber: string; totalAmount: number; status: string };
-  payluk: {
-    paymentToken: string;
-    escrowId: string | null;
-    customerId: string;
-    fee: number;
-    payableAmount: number;
+  order: {
+    _id: unknown;
+    orderNumber: string;
+    totalAmount: number;
+    status: string;
+    paymentType: PaymentType;
   };
 }
+
+/** Payluk's minimum escrow amount (docs: Create escrow). */
+export const MIN_ORDER_AMOUNT = 1000;
 
 export async function checkoutFromCart(
   userId: string,
@@ -52,16 +51,16 @@ export async function checkoutFromCart(
   delivery?: {
     deliveryFee?: number;
     deliveryMethod?: 'delivery' | 'pickup';
-    escrowMode?: 'escrow' | 'normal';
+    paymentType?: PaymentType;
   }
 ): Promise<CheckoutResult> {
   // Shipping is only charged on the delivery option. The fee is priced by the
   // server with Fez below (never trusted from the browser).
   let deliveryFee = 0;
   const deliveryMethod = delivery?.deliveryMethod === 'delivery' ? 'delivery' : 'pickup';
-  // 'normal' → seller absorbs Payluk's fee (buyer pays clean price, Paystack-style).
-  // 'escrow' → buyer pays the fee for the held/protected payment.
-  const escrowMode = delivery?.escrowMode === 'normal' ? 'normal' : 'escrow';
+  // normal: released to the seller as soon as it's paid; seller pays Payluk's fee.
+  // protected: held until the buyer confirms; fee per the product's setting.
+  const paymentType: PaymentType = delivery?.paymentType === 'normal' ? 'normal' : 'protected';
   const buyer = await User.findById(userId);
   if (!buyer?.paylukCustomerId) {
     const err: any = new Error('Payment profile required');
@@ -121,6 +120,16 @@ export async function checkoutFromCart(
 
   const firstProduct: any = cart.items[0].product;
 
+  // Every Payluk payment is an escrow, and an escrow must be at least ₦1,000.
+  if (totalAmount < MIN_ORDER_AMOUNT) {
+    const err: any = new Error(
+      `The minimum order is ₦${MIN_ORDER_AMOUNT.toLocaleString('en-NG')}. Please add more items.`
+    );
+    err.code = 'MIN_ORDER_AMOUNT';
+    err.status = 400;
+    throw err;
+  }
+
   // Price delivery on the server with Fez — never trust a fee from the browser.
   if (deliveryMethod === 'delivery') {
     if (!shippingAddress.state) {
@@ -150,31 +159,25 @@ export async function checkoutFromCart(
     }
   }
 
-  // ── Fee split ────────────────────────────────────────────────────────────
-  // The escrow holds ONLY the goods subtotal — that is the seller's payout.
-  // Delivery + the platform's cut are added on top as a Payluk "additional fee"
-  // that Payluk credits straight to OUR platform wallet (no cut taken, not part
-  // of the escrow), so the seller never receives them.
+  // ── Fees ─────────────────────────────────────────────────────────────────
+  // The escrow (created when the buyer pays, see payment.service) holds ONLY the
+  // goods: that is the seller's payout. Delivery + URA's platform charge go in
+  // the escrow's additionalFee, which Payluk pays to URA's merchant wallet.
   const platformFeePct = Math.max(0, Number(process.env.PLATFORM_FEE_PERCENT) || 0);
   const platformFee = Math.round((totalAmount * platformFeePct) / 100);
-  const additionalFee = deliveryFee + platformFee; // → platform wallet
-  const grandTotal = totalAmount + deliveryFee + platformFee; // order value (excl. Payluk processing fee)
+  const grandTotal = totalAmount + deliveryFee + platformFee; // excl. Payluk's own fee
 
-  // Find the seller (product's business owner). They need a Payluk customer id
-  // to receive escrow funds. If they never onboarded, auto-create one on the fly
-  // so an un-onboarded seller doesn't block the buyer from checking out.
+  // The seller needs a Payluk customer id to receive the money. If they never
+  // onboarded, create one now so they don't block the buyer.
   const sellerBusiness = await Business.findById(firstProduct.business).lean();
   const seller = sellerBusiness ? await User.findById((sellerBusiness as any).owner) : null;
-
   if (!seller) {
     const err: any = new Error('This product is not available for purchase yet.');
     err.code = 'PRODUCT_NOT_AVAILABLE';
     err.status = 422;
     throw err;
   }
-
-  let sellerCustomerId = seller.paylukCustomerId;
-  if (!sellerCustomerId) {
+  if (!seller.paylukCustomerId) {
     try {
       const created = await createPaylukCustomer({
         firstName: seller.firstName || (sellerBusiness as any)?.businessName || 'Seller',
@@ -182,9 +185,8 @@ export async function checkoutFromCart(
         email: seller.email,
         phone: (seller as any).phone,
       });
-      sellerCustomerId = created.customerId;
-      await User.updateOne({ _id: seller._id }, { $set: { paylukCustomerId: sellerCustomerId } });
-      console.log(`✅ [checkout] auto-created Payluk customer for seller ${seller._id}`);
+      await User.updateOne({ _id: seller._id }, { $set: { paylukCustomerId: created.customerId } });
+      console.log(`✅ [checkout] created Payluk customer for seller ${seller._id}`);
     } catch (e) {
       console.error('[checkout] seller Payluk customer creation failed:', (e as Error).message);
       const err: any = new Error('This product is not available for purchase yet.');
@@ -199,65 +201,27 @@ export async function checkoutFromCart(
   await releaseUnpaidHolds({ user: userId });
 
   // Take the stock off the shelf now, so two buyers can't pay for the last one.
-  // Put it back if anything below fails before the order is saved.
   await holdItems(orderItems);
   try {
-    // Create a fresh escrow holding ONLY the goods subtotal (the seller's payout).
-    const escrow = await createPaymentLink({
-      amount: totalAmount,
-      purpose: firstProduct.name,
-      description: firstProduct.description || firstProduct.name,
-      // Normal payment: seller bears Payluk's fee → buyer pays the clean price.
-      // Escrow: buyer bears it (the cost of protection).
-      whoPays: escrowMode === 'normal' ? 'seller' : firstProduct.whoPays || 'buyer',
-      maxDelivery: firstProduct.maxDelivery ?? 3,
-      deliveryTimeline: firstProduct.deliveryTimeline || 'days',
-      totalQuantity: cart.items.reduce((sum: number, i: any) => sum + i.quantity, 0),
-      imageUrl: firstProduct.media?.[0] ?? null,
-      customerId: sellerCustomerId!,
-    });
-
-    const paylukPaymentToken = escrow.paymentToken;
-    const paylukEscrowId = escrow.escrowId;
-
-    // Route delivery + platform cut to the platform wallet, kept out of escrow.
-    // Abort if this fails so we never create an order that under-charges the buyer
-    // or leaks the delivery fee into the seller's payout.
-    if (additionalFee > 0) {
-      try {
-        await updateAdditionalFee(paylukPaymentToken, additionalFee);
-      } catch (e) {
-        console.error('[checkout] additional-fee setup failed:', (e as Error).message);
-        const err: any = new Error('Could not set up payment. Please try again.');
-        err.code = 'FEE_SETUP_FAILED';
-        err.status = 502;
-        throw err;
-      }
-    }
-
-    // What the buyer is actually charged.
-    // - normal: goods + delivery/platform only (seller absorbs Payluk's fee → no add-on).
-    // - escrow: goods + Payluk's fee share + delivery/platform.
-    const buyerPayable =
-      escrowMode === 'normal'
-        ? totalAmount + additionalFee
-        : (escrow.payableAmount ?? totalAmount + escrow.fee) + additionalFee;
-
     const order = await Order.create({
       user: userId,
       business: firstProduct.business,
       orderNumber: `ORD-${Date.now().toString(36).toUpperCase()}`,
       items: orderItems,
-      // totalAmount is what the buyer is charged (items + shipping).
+      // Items + delivery + platform charge (Payluk's own fee is added at payment).
       totalAmount: grandTotal,
+      itemsTotal: totalAmount,
       deliveryFee,
+      deliveryFeeCharged: deliveryFee,
+      // URA pays Fez from its own account; the quote is what we expect to pay.
+      ...(deliveryMethod === 'delivery' ? { fezCost: deliveryFee } : {}),
+      platformFee,
       deliveryMethod,
       shippingAddress,
       paymentMethod,
+      paymentType,
       status: 'pending',
       paymentStatus: 'pending',
-      paylukPaymentToken,
-      paylukEscrowId,
       payment: { provider: 'payluk' },
       stockReserved: true,
       reservedUntil: holdExpiry(),
@@ -280,100 +244,13 @@ export async function checkoutFromCart(
         orderNumber: order.orderNumber,
         totalAmount: order.totalAmount,
         status: order.status,
-      },
-      payluk: {
-        paymentToken: paylukPaymentToken,
-        escrowId: paylukEscrowId,
-        customerId: buyer.paylukCustomerId!,
-        fee: escrow.fee,
-        // Buyer's real charge: goods + Payluk fee + delivery + platform cut.
-        payableAmount: buyerPayable,
+        paymentType,
       },
     };
   } catch (e) {
     await releaseItems(orderItems).catch(() => {});
     throw e;
   }
-}
-
-/**
- * Buyer returns from Payluk. We ASK PAYLUK whether the money actually arrived
- * before marking the order paid — the paymentId in the URL alone proves nothing.
- * If Payluk hasn't confirmed yet, we report "pending"; the Payluk webhook will
- * finish the job and notify everyone when the money lands.
- */
-export async function confirmPayment(
-  userId: string,
-  paymentId: string
-): Promise<{ alreadyConfirmed: boolean; pending?: boolean; order: Record<string, unknown> }> {
-  const pending = await Order.findOne({ user: userId, paymentStatus: 'pending' }).sort({
-    createdAt: -1,
-  });
-
-  if (!pending) {
-    const paid = await Order.findOne({ user: userId, paymentStatus: 'paid' }).sort({
-      createdAt: -1,
-    });
-    if (paid) {
-      return {
-        alreadyConfirmed: true,
-        order: {
-          _id: paid._id,
-          orderNumber: paid.orderNumber,
-          totalAmount: paid.totalAmount,
-          status: paid.status,
-          paymentStatus: paid.paymentStatus,
-          business: paid.business,
-        },
-      };
-    }
-    const err: any = new Error('No pending order found');
-    err.status = 404;
-    throw err;
-  }
-
-  let verified = false;
-  try {
-    if (pending.paylukPaymentToken) {
-      const result = await verifyPaymentToken(pending.paylukPaymentToken);
-      verified = isPaidStatus(result.status);
-      if (!verified)
-        console.warn(
-          `[confirmPayment] Payluk status "${result.status}" for ${pending.orderNumber} — not paid yet`
-        );
-    }
-  } catch (e) {
-    console.error('[confirmPayment] Payluk verify failed:', (e as Error).message);
-  }
-
-  if (!verified) {
-    return {
-      alreadyConfirmed: false,
-      pending: true,
-      order: {
-        _id: pending._id,
-        orderNumber: pending.orderNumber,
-        totalAmount: pending.totalAmount,
-        status: pending.status,
-        paymentStatus: pending.paymentStatus,
-        business: pending.business,
-      },
-    };
-  }
-
-  const updated =
-    (await markOrderPaid(pending._id, paymentId)) ?? (await Order.findById(pending._id));
-  return {
-    alreadyConfirmed: false,
-    order: {
-      _id: updated!._id,
-      orderNumber: updated!.orderNumber,
-      totalAmount: updated!.totalAmount,
-      status: updated!.status,
-      paymentStatus: updated!.paymentStatus,
-      business: updated!.business,
-    },
-  };
 }
 
 export const getOrdersForUser = (userId: string) =>
@@ -456,6 +333,11 @@ export const markOrderReady = async (
     e.status = 400;
     throw e;
   }
+  if (order.disputeStatus === 'open' || order.disputeStatus === 'investigating') {
+    const e: any = new Error('This order has an open dispute. Please wait for it to be resolved.');
+    e.status = 409;
+    throw e;
+  }
   if (order.status !== OrderStatus.PROCESSING) {
     const e: any = new Error(`This order is already ${order.status}`);
     e.status = 409;
@@ -497,6 +379,9 @@ export const markOrderReady = async (
       const { trackingNo } = await createDeliveryOrder(delivery);
       if (trackingNo) order.trackingNumber = trackingNo;
       order.fulfilment = 'fez';
+      // The delivery cost is now spent: record it so a later dispute ruling
+      // can keep the delivery fee with URA (additionalFeeRefundable = false).
+      order.riderBookedAt = new Date();
     } catch (err) {
       console.error('[markOrderReady] Fez booking failed:', (err as Error).message);
       notifyOrderEvent(order, 'DELIVERY_BOOKING_FAILED').catch(() => {});
