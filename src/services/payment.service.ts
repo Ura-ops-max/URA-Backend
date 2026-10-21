@@ -196,10 +196,11 @@ export async function startPayment(orderId: string, userId: string): Promise<Sta
 
 // ─── GET /orders/:id/payment-status ──────────────────────────────────────────
 
-// Each check is a Payluk call (10 a minute, shared). Ask Payluk at most every
-// 10 seconds per order; the webhook normally gets there first.
+// Each check is a Payluk call, and Payluk allows only 10 a minute for ALL of
+// URA. Ask Payluk at most every 20 seconds per order (3 a minute); the webhook
+// normally marks the order paid first, and this is only the fallback.
 const lastVerified = new Map<string, number>();
-const VERIFY_EVERY_MS = 10_000;
+const VERIFY_EVERY_MS = 20_000;
 
 export async function getPaymentStatus(orderId: string, userId: string) {
   let order = await loadOrder(orderId);
