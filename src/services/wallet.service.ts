@@ -15,6 +15,17 @@ import {
   verifyBankAccount,
 } from '@/services/payluk.service';
 
+/**
+ * Payluk sometimes reports the currency as "NG" (a country code). Browsers
+ * throw on that when formatting money, which crashed the wallet page.
+ * Always send a valid 3-letter currency code.
+ */
+export const normalizeCurrency = (c: unknown): string => {
+  const v = String(c ?? '').trim().toUpperCase();
+  if (v === 'NG' || v === 'NAIRA' || v === '₦') return 'NGN';
+  return /^[A-Z]{3}$/.test(v) ? v : 'NGN';
+};
+
 // ─── Tiny TTL cache ──────────────────────────────────────────────────────────
 
 const cache = new Map<string, { at: number; value: unknown }>();
@@ -37,8 +48,10 @@ export function invalidateWalletCache(customerId: string): void {
 
 // ─── Reads ───────────────────────────────────────────────────────────────────
 
-export const walletBalance = (customerId: string) =>
-  cached(`wallet:${customerId}:`, WALLET_TTL, () => getWallet(customerId));
+export const walletBalance = async (customerId: string) => {
+  const w = await cached(`wallet:${customerId}:`, WALLET_TTL, () => getWallet(customerId));
+  return { ...w, currency: normalizeCurrency(w.currency) };
+};
 
 export async function walletTransactions(customerId: string, page = 1, limit = 20, type?: string) {
   const d: any = await cached(
@@ -55,7 +68,7 @@ export async function walletTransactions(customerId: string, page = 1, limit = 2
       reference: t.reference,
       amount: Number(t.amount) || 0,
       fee: Number(t.fee) || 0,
-      currency: t.currency || 'NGN',
+      currency: normalizeCurrency(t.currency),
       transactionType: t.transactionType,
       creditType: t.creditType, // credit | debit
       status: t.status,
