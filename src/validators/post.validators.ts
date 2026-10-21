@@ -17,10 +17,8 @@ export const createPostField = {
   productId: Joi.string().optional().allow(null),
   media: Joi.when('type', {
     is: 'PRODUCT',
-    then: Joi.array().items(Joi.string()).min(1).required().messages({
-      'array.min': 'Products must have at least one image or video.',
-      'any.required': 'Product media is required.',
-    }),
+    // Optional for products: without a photo the app shows a name tile.
+    then: Joi.array().items(Joi.string()).optional().default([]),
     otherwise: Joi.array().items(Joi.string()).optional(),
   }),
 
@@ -32,11 +30,10 @@ export const createPostField = {
     is: 'PRODUCT',
     then: Joi.string().default('General'),
   }),
+  // Optional for products: a product can be listed with no description.
   description: Joi.when('type', {
     is: 'PRODUCT',
-    then: Joi.string()
-      .required()
-      .messages({ 'any.required': 'Product description is compulsory.' }),
+    then: Joi.string().trim().max(2000).allow('').optional().default(''),
   }),
   price: Joi.when('type', {
     is: 'PRODUCT',

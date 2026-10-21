@@ -8,10 +8,8 @@ const createProductBody = createSchema({
     'string.min': 'Product name must be at least 2 characters.',
     'string.max': 'Product name cannot exceed 120 characters.',
   }),
-  description: Joi.string().trim().min(10).required().messages({
-    'any.required': 'Product description is required.',
-    'string.min': 'Description must be at least 10 characters.',
-  }),
+  // Optional: a product can be listed with no description.
+  description: Joi.string().trim().max(2000).allow('').optional().default(''),
   price: Joi.number().min(0).required().messages({
     'any.required': 'Price is required.',
     'number.min': 'Price cannot be negative.',
@@ -22,10 +20,8 @@ const createProductBody = createSchema({
   }),
   category: Joi.string().optional().default('General'),
   tags: Joi.array().items(Joi.string()).optional().default([]),
-  media: Joi.array().items(Joi.string().uri()).min(1).required().messages({
-    'any.required': 'At least one product image is required.',
-    'array.min': 'At least one product image is required.',
-  }),
+  // Optional: without a photo the app shows a tile with the name's initials.
+  media: Joi.array().items(Joi.string().uri()).optional().default([]),
   size: Joi.string().allow('').optional(),
   whoPays: Joi.string().valid('buyer', 'seller', 'both').default('seller'),
   maxDelivery: Joi.number().integer().min(1).default(3),
@@ -34,7 +30,7 @@ const createProductBody = createSchema({
 
 const updateProductBody = createSchema({
   name: Joi.string().trim().min(2).max(120).optional(),
-  description: Joi.string().trim().min(10).optional(),
+  description: Joi.string().trim().max(2000).allow('').optional(),
   price: Joi.number().min(0).optional(),
   stock: Joi.number().integer().min(0).optional(),
   category: Joi.string().optional(),

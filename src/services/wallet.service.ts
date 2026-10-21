@@ -47,22 +47,20 @@ export async function walletTransactions(customerId: string, page = 1, limit = 2
     () => getPaymentHistory({ customerId, page, limit, ...(type ? { type } : {}) })
   );
   const rows: any[] = Array.isArray(d?.data) ? d.data : Array.isArray(d) ? d : [];
+  // The fields the wallet screens show (same names as Payluk's), nothing more.
   return {
     pagination: d?.pagination ?? null,
-    transactions: rows.map(t => ({
+    data: rows.map(t => ({
       id: t.id,
       reference: t.reference,
       amount: Number(t.amount) || 0,
       fee: Number(t.fee) || 0,
-      type: t.transactionType,
-      direction: t.creditType, // credit | debit
+      currency: t.currency || 'NGN',
+      transactionType: t.transactionType,
+      creditType: t.creditType, // credit | debit
       status: t.status,
-      description:
-        t.escrowDetails?.purpose ||
-        t.withdrawalDetails?.bankName ||
-        t.walletDetails?.name ||
-        t.transactionType,
       createdAt: t.createdAt,
+      updatedAt: t.updatedAt,
     })),
   };
 }
@@ -102,19 +100,33 @@ export async function walletEscrows(
     : [];
   const byEscrow = new Map(orders.map((o: any) => [String(o.paylukEscrowId), o]));
 
+  // Same field names as Payluk's, minus the payment token: actions on an
+  // escrow go through its URA order (/orders/:id/...), never by token.
   return {
     pagination: d?.pagination ?? null,
-    escrows: rows.map(r => {
+    report: d?.report ?? null,
+    data: rows.map(r => {
       const o: any = byEscrow.get(String(r.id));
       return {
         id: r.id,
         purpose: r.purpose,
+        description: r.description ?? '',
         amount: Number(r.amount) || 0,
         fee: Number(r.fee) || 0,
+        whoPays: r.whoPays,
         status: r.status,
         state: r.state,
+        channel: r.channel,
+        maxDelivery: r.maxDelivery,
+        deliveryTimeline: r.deliveryTimeline,
+        totalQuantity: r.totalQuantity,
         paidAt: r.paidAt ?? null,
         completedAt: r.completedAt ?? null,
+        createdAt: r.createdAt,
+        updatedAt: r.updatedAt,
+        paymentDetails: r.paymentDetails
+          ? { amount: Number(r.paymentDetails.amount) || 0, status: r.paymentDetails.status }
+          : null,
         orderId: o ? String(o._id) : null,
         orderNumber: o?.orderNumber ?? null,
         paymentType: o?.paymentType ?? null,
