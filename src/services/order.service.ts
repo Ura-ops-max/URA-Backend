@@ -13,6 +13,13 @@ import {
 } from '@/services/fez.service';
 import { notifyOrderEvent } from '@/services/order-events.service';
 import {
+  moneyNote,
+  orderActions,
+  presentOrderForList,
+  type ViewerRole,
+} from '@/services/order-view.service';
+import {
+  unavailableMessage,
   holdItems,
   releaseItems,
   releaseUnpaidHolds,
@@ -104,7 +111,8 @@ export async function checkoutFromCart(
       throw err;
     }
     if (p.stock < item.quantity) {
-      const err: any = new Error(`"${p.name}" only has ${p.stock} unit(s) left in stock`);
+      const err: any = new Error(await unavailableMessage(p._id, p.name, p.stock));
+      err.code = 'STOCK_UNAVAILABLE';
       err.status = 400;
       throw err;
     }
@@ -253,10 +261,16 @@ export async function checkoutFromCart(
   }
 }
 
-export const getOrdersForUser = (userId: string) =>
-  Order.find({ user: userId })
+/** My Orders: the buyer's own orders, with the shop name and their actions. */
+export const getOrdersForUser = async (userId: string) => {
+  const orders = await Order.find({ user: userId, status: { $ne: 'cancelled' } })
     .sort({ createdAt: -1 })
-    .populate('items.product', 'name media price');
+    // The shop's phone (already shown to the buyer on the order page) is used
+    // for the "Message <shop>" WhatsApp button.
+    .populate('business', 'businessName slug contact.phone')
+    .lean();
+  return orders.map(o => presentOrderForList(o, 'buyer'));
+};
 
 /** Businesses owned by this user (a seller can own more than one). */
 const businessIdsOwnedBy = async (userId: string) =>
@@ -272,7 +286,8 @@ export const getOrderByIdForUser = async (orderId: string, userId: string) => {
   const order = await Order.findById(orderId)
     .populate('items.product', 'name media price')
     .populate('business', 'businessName slug businessLogo address contact')
-    .populate('user', 'firstName lastName email');
+    // The seller sees the buyer's full name on their own order; never the email.
+    .populate('user', 'firstName lastName');
   if (!order) {
     const e: any = new Error('Order not found');
     e.status = 404;
@@ -288,17 +303,21 @@ export const getOrderByIdForUser = async (orderId: string, userId: string) => {
     e.status = 403;
     throw e;
   }
-  return { order, role: isBuyer ? 'buyer' : 'seller' };
+  const role: ViewerRole = isBuyer ? 'buyer' : 'seller';
+  return { order, role, actions: orderActions(order, role), moneyNote: moneyNote(order, role) };
 };
 
 /** Paid orders that customers placed with this seller's business(es). */
 export const getReceivedOrdersForSeller = async (userId: string) => {
   const ids = await businessIdsOwnedBy(userId);
   if (!ids.length) return [];
-  return Order.find({ business: { $in: ids }, paymentStatus: 'paid' })
+  const orders = await Order.find({ business: { $in: ids }, paymentStatus: 'paid' })
     .sort({ paidAt: -1, createdAt: -1 })
     .populate('user', 'firstName lastName')
-    .populate('business', 'businessName slug');
+    .populate('business', 'businessName slug')
+    .lean();
+  // Shop Orders list: "Amaka O.", no phone numbers (those are on the order page).
+  return orders.map(o => presentOrderForList(o, 'seller'));
 };
 
 /**

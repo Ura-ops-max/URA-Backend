@@ -3,9 +3,9 @@ import rateLimit from 'express-rate-limit';
 import { requireAuth } from '@/middleware/passport-auth';
 import {
   confirmWithdrawal,
+  getActivity,
   getBanks,
-  getEscrows,
-  getTransactions,
+  getHeld,
   getWallet,
   startWithdrawal,
   verifyAccount,
@@ -24,8 +24,8 @@ const walletWriteLimiter = rateLimit({
 });
 
 router.get('/', getWallet); // GET  /wallet               balance
-router.get('/transactions', getTransactions); // GET  /wallet/transactions  history
-router.get('/escrows', getEscrows); // GET  /wallet/escrows?type=buy|sales
+router.get('/activity', getActivity); // GET  /wallet/activity  money rows with names
+router.get('/held', getHeld); // GET  /wallet/held  orders holding Buyer-Protected money
 router.get('/banks', getBanks); // GET  /wallet/banks
 router.post('/verify-account', walletWriteLimiter, verifyAccount); // POST /wallet/verify-account
 router.post('/withdraw', walletWriteLimiter, startWithdrawal); // POST /wallet/withdraw (step 1)

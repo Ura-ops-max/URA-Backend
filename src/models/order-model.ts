@@ -87,6 +87,28 @@ export interface IOrder extends Document {
   splitDetails?: { sellerAmount?: number; buyerAmount?: number; pool?: number };
   /** Needs a person: e.g. Payluk refused the release with 401. */
   adminFlag?: { reason: string; at: Date };
+
+  // ── Order actions (Part 2) ─────────────────────────────────────────────
+  cancelledAt?: Date;
+  /** The shop can't fill a paid Buyer-Protected order; the buyer gets a refund. */
+  rejectedAt?: Date;
+  rejectReason?: string;
+  /** Stock already put back (so a later refund doesn't add it twice). */
+  stockRestoredAt?: Date;
+  buyerReportedAt?: Date;
+  sellerRespondedAt?: Date;
+  /** Payluk lets the seller claim one day after the delivery window. */
+  claimableAt?: Date;
+  /** Buyer-Protected: paid to the shop automatically at this time (Part 4). */
+  autoReleaseAt?: Date;
+  /** Wait used when no product has a delivery time. */
+  autoReleaseDays?: number;
+  /** The buyer was told "Your money goes to <shop> in 6 hours". */
+  autoReleaseWarnedAt?: Date;
+  /** Who asked Payluk to release (set before the call). */
+  releaseRequestedBy?: 'buyer' | 'auto';
+  /** Who released the money: the buyer, the auto-release job, or an admin. */
+  releasedBy?: 'buyer' | 'auto' | 'admin';
 }
 
 const OrderSchema: Schema = new Schema(
@@ -161,6 +183,18 @@ const OrderSchema: Schema = new Schema(
     disputedAt: { type: Date },
     splitDetails: { sellerAmount: Number, buyerAmount: Number, pool: Number },
     adminFlag: { reason: String, at: Date },
+    cancelledAt: { type: Date },
+    rejectedAt: { type: Date },
+    rejectReason: { type: String, maxlength: 300 },
+    stockRestoredAt: { type: Date },
+    buyerReportedAt: { type: Date },
+    sellerRespondedAt: { type: Date },
+    claimableAt: { type: Date },
+    autoReleaseAt: { type: Date },
+    autoReleaseDays: { type: Number, default: 1, min: 1, max: 30 },
+    autoReleaseWarnedAt: { type: Date },
+    releaseRequestedBy: { type: String, enum: ['buyer', 'auto'] },
+    releasedBy: { type: String, enum: ['buyer', 'auto', 'admin'] },
   },
   { timestamps: true }
 );
@@ -169,5 +203,7 @@ const OrderSchema: Schema = new Schema(
 OrderSchema.index({ paymentStatus: 1, stockReserved: 1, reservedUntil: 1 });
 // Webhooks find the order by Payluk's escrow id.
 OrderSchema.index({ paylukEscrowId: 1 });
+// The auto-release job finds due Buyer-Protected orders quickly.
+OrderSchema.index({ paymentStatus: 1, autoReleaseAt: 1 });
 
 export default mongoose.model<IOrder>('Order', OrderSchema);

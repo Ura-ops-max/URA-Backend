@@ -211,6 +211,17 @@ describe('stock hold at checkout', () => {
     expect((await Product.findById(a._id).lean())?.stock).toBe(5); // A was put back
   });
 
+  it('says "Someone else is paying" when another checkout holds the last one', async () => {
+    const { businessId } = await makeShop();
+    const [p] = await Product.create([{ business: businessId, name: 'Last', price: 1, stock: 1, media: [] }]);
+    await holdItems([item(p._id, 1)]);
+    await pendingOrder(businessId, p._id, new Date(Date.now() + 60_000));
+    await expect(holdItems([item(p._id, 1)])).rejects.toMatchObject({
+      code: 'STOCK_UNAVAILABLE',
+      message: expect.stringMatching(/Someone else is paying/),
+    });
+  });
+
   it('two buyers cannot both hold the last item', async () => {
     const { businessId } = await makeShop();
     const [p] = await Product.create([{ business: businessId, name: 'A', price: 1, stock: 1, media: [] }]);

@@ -10,7 +10,7 @@
 import Order from '@/models/order-model';
 import { Product } from '@/models/product-model';
 
-const HOLD_MINUTES = Math.max(5, Number(process.env.STOCK_HOLD_MINUTES) || 30);
+const HOLD_MINUTES = Math.max(5, Number(process.env.STOCK_HOLD_MINUTES) || 15);
 const SWEEP_INTERVAL_MS = 2 * 60_000;
 const SWEEP_BATCH = 100;
 
@@ -21,6 +21,29 @@ export interface HoldItem {
 }
 
 export const holdExpiry = (): Date => new Date(Date.now() + HOLD_MINUTES * 60_000);
+
+/**
+ * Why an item can't be bought right now. If the shelf is empty only because
+ * another buyer's checkout is holding it, say so: it may come back if they
+ * don't pay.
+ */
+export async function unavailableMessage(
+  productId: unknown,
+  name: string,
+  left: number
+): Promise<string> {
+  if (left <= 0) {
+    const heldByOthers = await Order.exists({
+      paymentStatus: 'pending',
+      stockReserved: true,
+      'items.product': productId,
+    });
+    if (heldByOthers) {
+      return `Someone else is paying for "${name}" right now. Please try again in a few minutes.`;
+    }
+  }
+  return `"${name}" only has ${Math.max(0, left)} unit(s) left in stock`;
+}
 
 /** Put stock back for items that were held. */
 export async function releaseItems(items: HoldItem[]): Promise<void> {
@@ -44,8 +67,9 @@ export async function holdItems(items: HoldItem[]): Promise<void> {
       await releaseItems(taken);
       const left = await Product.findById(item.product).select('stock').lean();
       const err: any = new Error(
-        `"${item.name}" only has ${Math.max(0, (left as any)?.stock ?? 0)} unit(s) left in stock`
+        await unavailableMessage(item.product, item.name, Number((left as any)?.stock) || 0)
       );
+      err.code = 'STOCK_UNAVAILABLE';
       err.status = 400;
       throw err;
     }

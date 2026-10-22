@@ -21,6 +21,7 @@ import assistantRoutes from '@/routes/assistant.routes';
 import deliveryRoutes from '@/routes/delivery.routes';
 import publicBusinessRoutes from '@/routes/public-business.routes';
 import adsRoutes from '@/routes/ads.routes';
+import pushRoutes from '@/routes/push.routes';
 
 const router = Router();
 
@@ -41,6 +42,8 @@ router.use('/webhooks', webhookRouter);
 router.use('/onboarding', onboardingRoutes);
 // Payluk: everything goes through URA's own routes (no browser proxy).
 router.use('/wallet', walletRoutes);
+// Web push subscriptions (sellers' new-order alerts).
+router.use('/push', pushRoutes);
 router.use('/admin', adminRoutes);
 router.use('/assistant', assistantRoutes);
 router.use('/delivery', deliveryRoutes);

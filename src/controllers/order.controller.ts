@@ -148,11 +148,8 @@ export const getMyOrders = async (req: Request, res: Response) => {
 
 export const getOrderById = async (req: Request, res: Response) => {
   try {
-    const { order, role } = await orderService.getOrderByIdForUser(
-      String(req.params.id),
-      getAuthUserId(req)!
-    );
-    return res.status(200).json({ success: true, order, role });
+    const r = await orderService.getOrderByIdForUser(String(req.params.id), getAuthUserId(req)!);
+    return res.status(200).json({ success: true, ...r });
   } catch (error: any) {
     return res.status(error.status || 500).json({ success: false, message: error.message });
   }

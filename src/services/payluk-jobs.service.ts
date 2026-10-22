@@ -4,7 +4,8 @@
  *
  * Job types:
  *  - webhook: apply a received Payluk event to its order.
- *  - release: Normal Payment, pay the seller (confirm-payment as the buyer).
+ *  - release: pay the seller (confirm-payment as the buyer): a Normal Payment
+ *    at once, or a Buyer-Protected order when its auto-release time comes.
  *
  * Safety: a job is claimed with an atomic update (status pending → running,
  * with a lock that expires), so two workers can never run the same job. The
@@ -20,6 +21,7 @@ import {
   findOrderForEscrow,
   flagOrder,
 } from '@/services/payment-sync.service';
+import { isAutoReleasable } from '@/services/release-schedule.service';
 
 const POLL_MS = 3_000;
 const LOCK_MS = 5 * 60_000;
@@ -33,16 +35,22 @@ class Skip extends Error {}
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
-/** Normal Payment: release the escrow to the seller, once. */
+/** Release the escrow to the seller, once (Normal, or Buyer-Protected auto-release). */
 export async function runRelease(job: IPaylukJob): Promise<void> {
   const orderId = String(job.payload.orderId);
+  const auto = job.payload.auto === true;
   const order = await Order.findById(orderId);
   if (!order) throw new Skip(`order ${orderId} not found`);
-  if (order.paymentType !== 'normal') throw new Skip('not a Normal Payment order');
   if (order.payoutReleasedAt) throw new Skip('already released');
+  if (order.paymentType !== 'normal') {
+    if (!auto) throw new Skip('not a Normal Payment order');
+    // Checked again right before paying: a problem reported since the job was
+    // queued, a rejection or a refund stops it.
+    if (!isAutoReleasable(order)) throw new Skip('auto-release no longer allowed');
+  }
   if (!order.paylukPaymentToken || !order.paylukEscrowId) throw new Skip('no escrow on order');
 
-  // Check the escrow's real state first; it may already be completed.
+  // Check the escrow's real state first; it may already be completed or disputed.
   const before = await verifyEscrow(order.paylukPaymentToken, 'background');
   const synced = await applyEscrowState(order, before);
   if (synced.payoutReleasedAt) throw new Skip('released (seen on verify)');
@@ -55,7 +63,10 @@ export async function runRelease(job: IPaylukJob): Promise<void> {
   const buyerId = await buyerPaylukId(order);
   if (!buyerId) throw new Skip('buyer has no Payluk id');
 
-  await Order.updateOne({ _id: order._id }, { $set: { releaseRequestedAt: new Date() } });
+  await Order.updateOne(
+    { _id: order._id },
+    { $set: { releaseRequestedAt: new Date(), releaseRequestedBy: 'auto' } }
+  );
   const after = await confirmEscrow(order.paylukEscrowId, buyerId, 'background');
   await applyEscrowState(synced, after.id ? after : before);
 }

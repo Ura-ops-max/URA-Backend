@@ -18,3 +18,11 @@ export function toPaylukDeliveryWindow(
     deliveryTimeline: unit as 'minutes' | 'hours' | 'days',
   };
 }
+
+const UNIT_MS = { minutes: 60_000, hours: 3_600_000, days: 86_400_000 } as const;
+
+/** The same window as above, in milliseconds. */
+export function deliveryWindowMs(maxDelivery: unknown, timeline: unknown): number {
+  const w = toPaylukDeliveryWindow(maxDelivery, timeline);
+  return w.maxDelivery * UNIT_MS[w.deliveryTimeline];
+}
