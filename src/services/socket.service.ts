@@ -159,6 +159,12 @@ class SocketService {
     return !!(room && room.size > 0);
   }
 
+  /** Send any live event to a user/profile room. Does nothing before init. */
+  public emitTo(recipientId: string | any, event: string, payload: unknown) {
+    if (!this._io || !recipientId) return;
+    this._io.to(recipientId.toString()).emit(event, payload);
+  }
+
   /** Sends a live notification to a specific user/profile room. */
   public sendNotification(recipientId: string | any, notification: any) {
     if (!this._io) return;

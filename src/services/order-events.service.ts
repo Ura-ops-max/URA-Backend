@@ -14,6 +14,7 @@ import { Business } from '@/models/business-model';
 import { trackEvent } from '@/services/track-event.service';
 import { sendOrderEmail } from '@/templates/emails';
 import { config } from '@/config/env.config';
+import { socketService } from '@/services/socket.service';
 
 export type OrderEvent =
   | 'PAID'
@@ -138,7 +139,7 @@ export async function notifyOrderEvent(
             `Your order ${order.orderNumber} from ${shopName} is paid (${total}). The seller is preparing it.`,
           ],
           seller: [
-            'New paid order',
+            `New paid order ${order.orderNumber}`,
             `${buyerName} paid for ${itemsText}. ${itemsTotal} for the items is being paid to your wallet now (Normal Payment)${nextStep}`,
           ],
         }
@@ -148,7 +149,7 @@ export async function notifyOrderEvent(
             `Your order ${order.orderNumber} from ${shopName} is paid (${total}). The seller is preparing it.`,
           ],
           seller: [
-            'New paid order',
+            `New paid order ${order.orderNumber}`,
             `${buyerName} paid for ${itemsText}. You'll receive ${itemsTotal} for the items when the buyer confirms delivery, or by itself after the delivery time if no problem is reported${nextStep}`,
           ],
         },
@@ -302,7 +303,25 @@ export async function notifyOrderEvent(
         modelType: 'Order',
       },
     }).catch(e => console.error('[order-events] seller notice failed:', e));
-    if (seller.email)
-      sendOrderEmail(seller.email, title, message, `${config.frontend.url}${orderLink}`);
+    if (seller.email) {
+      sendOrderEmail(
+        seller.email,
+        title,
+        message,
+        `${config.frontend.url}${orderLink}`,
+        // "New paid order ORD-1042": the subject as it is, so it stands out.
+        event === 'PAID' ? title : undefined
+      );
+    }
+  }
+
+  // Seller's live alert (banner and horn in the app). Names only, no contacts.
+  if (event === 'PAID') {
+    socketService.emitTo(String(seller._id), 'order_paid', {
+      orderId: relatedId,
+      orderNumber: order.orderNumber,
+      buyerFirstName: buyer.firstName ?? '',
+      shopName,
+    });
   }
 }
