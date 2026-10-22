@@ -11,7 +11,6 @@ import {
   getBankList,
   getPaymentHistory,
   getWallet,
-  listEscrows,
   verifyBankAccount,
 } from '@/services/payluk.service';
 
@@ -55,99 +54,179 @@ export const walletBalance = async (customerId: string) => {
   return { ...w, currency: normalizeCurrency(w.currency) };
 };
 
-export async function walletTransactions(customerId: string, page = 1, limit = 20, type?: string) {
-  const d: any = await cached(
-    `history:${customerId}:${page}:${limit}:${type ?? ''}`,
-    LIST_TTL,
-    () => getPaymentHistory({ customerId, page, limit, ...(type ? { type } : {}) })
+// ─── Activity: money rows with names (Part 1) ────────────────────────────────
+
+/** "Amaka O." from a first and last name. Never the full surname in lists. */
+export const shortName = (first?: string | null, last?: string | null): string => {
+  const f = String(first ?? '').trim();
+  const l = String(last ?? '').trim();
+  return [f, l ? `${l[0].toUpperCase()}.` : ''].filter(Boolean).join(' ') || 'A customer';
+};
+
+export type ActivityType = 'Payment received' | 'Payment sent' | 'Withdrawal' | 'Refund';
+export type ActivityStatus = 'Success' | 'Pending' | 'Failed' | 'Held' | 'Released';
+
+export interface ActivityRow {
+  id: string;
+  type: ActivityType;
+  direction: 'credit' | 'debit';
+  /** "From Amaka O. · ORD-..." / "To <shop> · ORD-..." / "Payment". */
+  details: string;
+  amount: number;
+  fee: number;
+  currency: string;
+  status: ActivityStatus;
+  date: string | null;
+  /** The URA order to open, when this row belongs to one of the user's orders. */
+  orderId: string | null;
+}
+
+// Our checkout references start with the order id (orderId, orderId-2,
+// orderId-wallet-1), so a row can be matched to its order from them.
+const orderIdFromReference = (ref: unknown): string | null => {
+  const m = /^([0-9a-f]{24})(?:-|$)/i.exec(String(ref ?? ''));
+  return m ? m[1] : null;
+};
+
+const baseStatus = (s: unknown): ActivityStatus =>
+  String(s).toLowerCase() === 'failed' || String(s).toLowerCase() === 'reversed'
+    ? 'Failed'
+    : String(s).toLowerCase() === 'pending'
+      ? 'Pending'
+      : 'Success';
+
+/**
+ * The signed-in user's own money rows, with names from URA's orders. Only
+ * orders the user bought, or sold through a shop they own, are used, so one
+ * user can never see another user's names. No references, emails, phones or
+ * Payluk ids are returned.
+ */
+export async function walletActivity(userId: string, customerId: string, page = 1, limit = 20) {
+  const d: any = await cached(`history:${customerId}:${page}:${limit}:`, LIST_TTL, () =>
+    getPaymentHistory({ customerId, page, limit })
   );
   const rows: any[] = Array.isArray(d?.data) ? d.data : Array.isArray(d) ? d : [];
-  // The fields the wallet screens show (same names as Payluk's), nothing more.
-  return {
-    pagination: d?.pagination ?? null,
-    data: rows.map(t => ({
-      id: t.id,
-      reference: t.reference,
+
+  const tokens = rows.map(r => r?.escrowDetails?.paymentToken).filter(Boolean);
+  const refs = rows.map(r => r?.reference).filter(Boolean);
+  const refOrderIds = refs.map(orderIdFromReference).filter((x): x is string => Boolean(x));
+
+  const myShops = (await Business.find({ owner: userId }).select('_id').lean()).map(b => b._id);
+  const orders = rows.length
+    ? await Order.find({
+        $and: [
+          { $or: [{ user: userId }, { business: { $in: myShops } }] },
+          {
+            $or: [
+              { paylukPaymentToken: { $in: tokens } },
+              { 'payment.transactionRef': { $in: [...refs, ...tokens] } },
+              { _id: { $in: refOrderIds } },
+            ],
+          },
+        ],
+      })
+        .select(
+          '_id user business orderNumber paylukPaymentToken payment.transactionRef paymentType paymentStatus payoutReleasedAt status'
+        )
+        .populate('user', 'firstName lastName')
+        .populate('business', 'businessName')
+        .lean()
+    : [];
+
+  const byToken = new Map<string, any>();
+  const byRef = new Map<string, any>();
+  const byId = new Map<string, any>();
+  for (const o of orders as any[]) {
+    if (o.paylukPaymentToken) byToken.set(o.paylukPaymentToken, o);
+    if (o.payment?.transactionRef) byRef.set(o.payment.transactionRef, o);
+    byId.set(String(o._id), o);
+  }
+
+  const data: ActivityRow[] = rows.map(t => {
+    const order =
+      byToken.get(t?.escrowDetails?.paymentToken) ??
+      byRef.get(t?.reference) ??
+      byId.get(orderIdFromReference(t?.reference) ?? '');
+    const credit = t.creditType === 'credit';
+    const isBuyer = order && String(order.user?._id ?? order.user) === userId;
+
+    let type: ActivityType;
+    if (t.transactionType === 'withdrawal') type = 'Withdrawal';
+    else if (credit && isBuyer)
+      type = 'Refund'; // money back to the buyer
+    else type = credit ? 'Payment received' : 'Payment sent';
+
+    let details = type === 'Withdrawal' ? 'To your bank' : 'Payment';
+    if (order) {
+      details = isBuyer
+        ? `To ${order.business?.businessName ?? 'the shop'} · ${order.orderNumber}`
+        : `From ${shortName(order.user?.firstName, order.user?.lastName)} · ${order.orderNumber}`;
+    }
+
+    let status = baseStatus(t.status);
+    // Buyer-Protected money: held until confirmed, then released.
+    if (
+      status === 'Success' &&
+      order &&
+      order.paymentType !== 'normal' &&
+      type !== 'Refund' &&
+      order.paymentStatus === 'paid'
+    ) {
+      status = order.payoutReleasedAt ? 'Released' : 'Held';
+    }
+
+    return {
+      id: String(t.id ?? ''),
+      type,
+      direction: credit ? 'credit' : 'debit',
+      details,
       amount: Number(t.amount) || 0,
       fee: Number(t.fee) || 0,
       currency: normalizeCurrency(t.currency),
-      transactionType: t.transactionType,
-      creditType: t.creditType, // credit | debit
-      status: t.status,
-      createdAt: t.createdAt,
-      updatedAt: t.updatedAt,
-    })),
-  };
+      status,
+      date: t.createdAt ?? null,
+      orderId: order ? String(order._id) : null,
+    };
+  });
+
+  return { pagination: d?.pagination ?? null, data };
 }
 
 /**
- * Escrows the user bought (type=buy) or sold (type=sales), each linked to its
- * URA order when there is one, so actions go through /orders/:id/… routes.
+ * Orders whose money is held in Buyer-Protected right now: the user's sales
+ * waiting for the buyer, and their own purchases waiting for them to confirm.
  */
-export async function walletEscrows(
-  userId: string,
-  customerId: string,
-  type: 'buy' | 'sales',
-  page = 1,
-  status?: string
-) {
-  const d: any = await cached(
-    `escrows:${customerId}:${type}:${page}:${status ?? ''}`,
-    LIST_TTL,
-    () => listEscrows({ customerId, type, page, limit: 20, ...(status ? { status } : {}) })
-  );
-  const rows: any[] = Array.isArray(d?.data) ? d.data : Array.isArray(d) ? d : [];
+export async function heldOrders(userId: string) {
+  const myShops = (await Business.find({ owner: userId }).select('_id').lean()).map(b => b._id);
+  const orders = await Order.find({
+    $or: [{ user: userId }, { business: { $in: myShops } }],
+    paymentType: { $ne: 'normal' },
+    paymentStatus: 'paid',
+    payoutReleasedAt: { $exists: false },
+    status: { $nin: ['refunded', 'cancelled'] },
+  })
+    .select('_id user business orderNumber itemsTotal items paidAt autoReleaseAt disputeStatus')
+    .populate('user', 'firstName lastName')
+    .populate('business', 'businessName')
+    .sort({ paidAt: -1 })
+    .limit(100)
+    .lean();
 
-  // Only the user's own orders are linked.
-  const ids = rows.map(r => String(r.id)).filter(Boolean);
-  const scope =
-    type === 'buy'
-      ? { user: userId }
-      : {
-          business: {
-            $in: (await Business.find({ owner: userId }).select('_id').lean()).map(b => b._id),
-          },
-        };
-  const orders = ids.length
-    ? await Order.find({ ...scope, paylukEscrowId: { $in: ids } })
-        .select('_id orderNumber paylukEscrowId paymentType')
-        .lean()
-    : [];
-  const byEscrow = new Map(orders.map((o: any) => [String(o.paylukEscrowId), o]));
-
-  // Same field names as Payluk's, minus the payment token: actions on an
-  // escrow go through its URA order (/orders/:id/...), never by token.
-  return {
-    pagination: d?.pagination ?? null,
-    report: d?.report ?? null,
-    data: rows.map(r => {
-      const o: any = byEscrow.get(String(r.id));
-      return {
-        id: r.id,
-        purpose: r.purpose,
-        description: r.description ?? '',
-        amount: Number(r.amount) || 0,
-        fee: Number(r.fee) || 0,
-        whoPays: r.whoPays,
-        status: r.status,
-        state: r.state,
-        channel: r.channel,
-        maxDelivery: r.maxDelivery,
-        deliveryTimeline: r.deliveryTimeline,
-        totalQuantity: r.totalQuantity,
-        paidAt: r.paidAt ?? null,
-        completedAt: r.completedAt ?? null,
-        createdAt: r.createdAt,
-        updatedAt: r.updatedAt,
-        paymentDetails: r.paymentDetails
-          ? { amount: Number(r.paymentDetails.amount) || 0, status: r.paymentDetails.status }
-          : null,
-        orderId: o ? String(o._id) : null,
-        orderNumber: o?.orderNumber ?? null,
-        paymentType: o?.paymentType ?? null,
-      };
-    }),
-  };
+  return (orders as any[]).map(o => {
+    const isBuyer = String(o.user?._id ?? o.user) === userId;
+    return {
+      orderId: String(o._id),
+      orderNumber: o.orderNumber,
+      role: isBuyer ? 'buyer' : 'seller',
+      name: isBuyer
+        ? (o.business?.businessName ?? 'Shop')
+        : shortName(o.user?.firstName, o.user?.lastName),
+      amount: o.itemsTotal ?? o.items.reduce((s: number, i: any) => s + i.price * i.quantity, 0),
+      paidAt: o.paidAt ?? null,
+      autoReleaseAt: o.autoReleaseAt ?? null,
+      problem: ['open', 'investigating'].includes(o.disputeStatus ?? ''),
+    };
+  });
 }
 
 export async function banks() {

@@ -181,16 +181,16 @@ export const getWallet = async (req: Request, res: Response) => {
   }
 };
 
-export const getTransactions = async (req: Request, res: Response) => {
+/** The user's own money rows, with names (never references, emails or phones). */
+export const getActivity = async (req: Request, res: Response) => {
   const ids = await customerIdOf(req, res);
   if (!ids) return;
   try {
-    const type = typeof req.query.type === 'string' ? req.query.type : undefined;
-    const r = await wallet.walletTransactions(
+    const r = await wallet.walletActivity(
+      ids.userId,
       ids.customerId,
       intQuery(req.query.page, 1),
-      Math.min(100, intQuery(req.query.limit, 20)),
-      type
+      Math.min(100, intQuery(req.query.limit, 20))
     );
     return res.status(200).json({ success: true, ...r });
   } catch (e) {
@@ -198,22 +198,14 @@ export const getTransactions = async (req: Request, res: Response) => {
   }
 };
 
-export const getEscrows = async (req: Request, res: Response) => {
-  const ids = await customerIdOf(req, res);
-  if (!ids) return;
+/** Orders whose money is held in Buyer-Protected (sales and purchases). */
+export const getHeld = async (req: Request, res: Response) => {
+  const userId = userIdOf(req, res);
+  if (!userId) return;
   try {
-    const type = req.query.type === 'sales' ? 'sales' : 'buy';
-    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
-    const r = await wallet.walletEscrows(
-      ids.userId,
-      ids.customerId,
-      type,
-      intQuery(req.query.page, 1),
-      status
-    );
-    return res.status(200).json({ success: true, ...r });
+    return res.status(200).json({ success: true, orders: await wallet.heldOrders(userId) });
   } catch (e) {
-    return sendError(res, e, 'Could not load your payments');
+    return sendError(res, e, 'Could not load held payments');
   }
 };
 
