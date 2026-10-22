@@ -265,7 +265,9 @@ export async function checkoutFromCart(
 export const getOrdersForUser = async (userId: string) => {
   const orders = await Order.find({ user: userId, status: { $ne: 'cancelled' } })
     .sort({ createdAt: -1 })
-    .populate('business', 'businessName slug')
+    // The shop's phone (already shown to the buyer on the order page) is used
+    // for the "Message <shop>" WhatsApp button.
+    .populate('business', 'businessName slug contact.phone')
     .lean();
   return orders.map(o => presentOrderForList(o, 'buyer'));
 };

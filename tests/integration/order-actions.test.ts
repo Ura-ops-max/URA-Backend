@@ -77,7 +77,7 @@ async function scene(opts: { type?: 'normal' | 'protected'; paid?: boolean; clai
   const buyer = await mk('Amaka', 'Okafor');
   const seller = await mk('Tunde', 'Bello');
   const stranger = await mk('Sade', 'Ade');
-  const shop = await Business.create({ owner: seller._id, businessName: 'Tunde Store', location: { type: 'Point', coordinates: [3.38, 6.52] } });
+  const shop = await Business.create({ owner: seller._id, businessName: 'Tunde Store', contact: { phone: '08055556666' }, location: { type: 'Point', coordinates: [3.38, 6.52] } });
   const product = await Product.create({ business: shop._id, name: 'Rice', price: 5000, stock: 8, media: [] });
   const paid = opts.paid ?? true;
   const token = `PY_${seq}`;
@@ -203,6 +203,9 @@ describe('Order lists', () => {
     const mine = await getOrdersForUser(s.buyer);
     expect(mine[0]).toMatchObject({ shop: expect.objectContaining({ businessName: 'Tunde Store' }), actions: expect.objectContaining({ confirmDelivery: true, reportProblem: true }) });
     expect(JSON.stringify(mine)).not.toContain('PY_');
+    // The buyer gets the shop's phone (for WhatsApp); the seller list never has it.
+    expect(mine[0].shop?.phone).toBe('08055556666');
+    expect(shopList[0].shop?.phone).toBeNull();
     expect(String(new Types.ObjectId()).length).toBe(24);
   });
 });

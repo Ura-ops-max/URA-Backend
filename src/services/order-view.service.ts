@@ -141,7 +141,15 @@ export function presentOrderForList(order: any, role: ViewerRole) {
     disputeStatus: o.disputeStatus ?? null,
     rejectedAt: o.rejectedAt ?? null,
     trackingNumber: o.trackingNumber ?? null,
-    shop: shop ? { _id: shop._id, businessName: shop.businessName, slug: shop.slug } : null,
+    shop: shop
+      ? {
+          _id: shop._id,
+          businessName: shop.businessName,
+          slug: shop.slug,
+          // Buyers only: for "Message <shop>" on WhatsApp.
+          phone: role === 'buyer' ? (shop.contact?.phone ?? null) : null,
+        }
+      : null,
     buyerName: role === 'seller' ? shortName(buyer?.firstName, buyer?.lastName) : null,
     role,
     actions: orderActions(o, role),
