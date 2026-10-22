@@ -25,6 +25,7 @@ export type OrderEvent =
   | 'DISPUTED'
   | 'PAYOUT_RELEASED' // Normal Payment: released to the seller straight away
   | 'SPLIT' // dispute resolved by dividing the money
+  | 'REJECTED' // the shop can't fill a paid Buyer-Protected order
   | 'DELIVERY_BOOKING_FAILED';
 
 const naira = (n: number) => `₦${Number(n || 0).toLocaleString('en-NG')}`;
@@ -218,6 +219,16 @@ export async function notifyOrderEvent(
       seller: [
         'Dispute resolved',
         `The dispute on order ${order.orderNumber} was resolved by splitting the payment.`,
+      ],
+    },
+    REJECTED: {
+      buyer: [
+        "The shop can't fill your order",
+        `${shopName} can't fill order ${order.orderNumber}. Open the order and tap "Get my money back" for a full refund.`,
+      ],
+      seller: [
+        'Order rejected',
+        `You rejected order ${order.orderNumber}. The buyer has been told and will be refunded.`,
       ],
     },
     DELIVERY_BOOKING_FAILED: {

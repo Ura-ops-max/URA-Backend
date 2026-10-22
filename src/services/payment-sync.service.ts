@@ -134,7 +134,7 @@ export async function applyEscrowState(order: IOrder, escrow: Escrow): Promise<I
       );
       if (before) {
         // Put the stock back if it was taken (paid, or still held at checkout).
-        if (before.paymentStatus === 'paid' || before.stockReserved) {
+        if ((before.paymentStatus === 'paid' || before.stockReserved) && !before.stockRestoredAt) {
           for (const item of before.items) {
             await Product.updateOne({ _id: item.product }, { $inc: { stock: item.quantity } });
           }

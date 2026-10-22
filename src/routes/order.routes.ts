@@ -9,6 +9,9 @@ import {
   markOrderReady,
 } from '@/controllers/order.controller';
 import {
+  cancelOrder,
+  rejectOrder,
+  requestRefund,
   claimFunds,
   confirmReceived,
   getDispute,
@@ -38,6 +41,9 @@ router.post('/:id/confirm-received', confirmReceived); // POST   /orders/:id/con
 router.post('/:id/dispute', evidence.single('file'), openDispute); // POST   /orders/:id/dispute
 router.get('/:id/dispute', getDispute); // GET    /orders/:id/dispute
 router.post('/:id/claim', claimFunds); // POST   /orders/:id/claim (seller)
+router.post('/:id/cancel', cancelOrder); // POST   /orders/:id/cancel (buyer, unpaid)
+router.post('/:id/reject', rejectOrder); // POST   /orders/:id/reject (seller, Buyer-Protected)
+router.post('/:id/refund', requestRefund); // POST   /orders/:id/refund (buyer, after a rejection)
 router.get('/', getMyOrders); // GET    /orders
 router.get('/received', getReceivedOrders); // GET    /orders/received   (seller)
 router.post('/:id/ready', markOrderReady); // POST   /orders/:id/ready  (seller)

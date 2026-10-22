@@ -21,10 +21,14 @@ import {
   isFunded,
   payEscrowFromWallet,
   setAdditionalFee,
+  resolveDisputeAsRefund,
   submitDispute,
   verifyEscrow,
 } from '@/services/payluk.service';
-import { applyEscrowState } from '@/services/payment-sync.service';
+import { applyEscrowState, flagOrder } from '@/services/payment-sync.service';
+import { orderActions } from '@/services/order-view.service';
+import { notifyOrderEvent } from '@/services/order-events.service';
+import { releaseUnpaidHolds } from '@/services/stock-hold.service';
 import { holdExpiry, holdItems } from '@/services/stock-hold.service';
 import { toPaylukDeliveryWindow } from '@/utils/delivery-window.utils';
 import { invalidateWalletCache } from '@/services/wallet.service';
@@ -282,6 +286,12 @@ export async function confirmReceived(orderId: string, userId: string) {
   if (order.paymentStatus !== 'paid') throw fail(400, 'This order has not been paid yet');
   if (order.payoutReleasedAt)
     throw fail(409, 'This order is already completed', 'ALREADY_RELEASED');
+  if (order.rejectedAt) {
+    throw fail(400, 'The shop rejected this order. Tap "Get my money back" instead.', 'REJECTED');
+  }
+  if (['open', 'investigating'].includes(order.disputeStatus ?? '')) {
+    throw fail(400, 'A problem was reported on this order. It is on hold until it is resolved.');
+  }
   if (!order.paylukPaymentToken || !order.paylukEscrowId)
     throw fail(409, 'No payment found for this order');
 
@@ -314,26 +324,40 @@ export async function submitOrderDispute(
   if (order.paymentType === 'normal') {
     throw fail(400, 'Normal Payment orders have no buyer protection.', 'NORMAL_PAYMENT');
   }
-  if (order.paymentStatus !== 'paid' || order.payoutReleasedAt) {
-    throw fail(400, 'This order cannot be disputed.');
-  }
-  if (seller && !['open', 'investigating'].includes(order.disputeStatus ?? '')) {
-    throw fail(400, 'The buyer has not opened a dispute.');
-  }
+  // Payluk: only the buyer opens (once); the seller replies once, after that.
+  const allowed = orderActions(order, buyer ? 'buyer' : 'seller');
+  if (buyer && !allowed.reportProblem)
+    throw fail(400, 'A problem can no longer be reported on this order.');
+  if (seller && !allowed.respondToProblem)
+    throw fail(400, 'There is no open problem to respond to.');
   if (!message?.trim()) throw fail(400, 'Please describe the problem.');
   if (!order.paylukPaymentToken) throw fail(409, 'No payment found for this order');
 
   const customerId = await paylukIdOf(userId);
   if (!customerId) throw fail(422, 'Payment profile required', 'PAYLUK_PROFILE_REQUIRED');
 
-  const escrow = await submitDispute({
-    paymentToken: order.paylukPaymentToken,
-    customerId,
-    message: message.trim(),
-    file: file
-      ? { buffer: file.buffer, filename: file.originalname, mimetype: file.mimetype }
-      : undefined,
-  });
+  // Claim the one submission first, so a double tap can't send two.
+  const field = buyer ? 'buyerReportedAt' : 'sellerRespondedAt';
+  const claimed = await Order.updateOne(
+    { _id: order._id, [field]: { $exists: false } },
+    { $set: { [field]: new Date() } }
+  );
+  if (!claimed.modifiedCount) throw fail(409, 'This was already sent.', 'ALREADY_SENT');
+
+  let escrow: Escrow;
+  try {
+    escrow = await submitDispute({
+      paymentToken: order.paylukPaymentToken,
+      customerId,
+      message: message.trim(),
+      file: file
+        ? { buffer: file.buffer, filename: file.originalname, mimetype: file.mimetype }
+        : undefined,
+    });
+  } catch (e) {
+    await Order.updateOne({ _id: order._id }, { $unset: { [field]: 1 } });
+    throw e;
+  }
   const updated = await applyEscrowState(
     order,
     escrow.id ? escrow : await verifyEscrow(order.paylukPaymentToken)
@@ -397,5 +421,131 @@ export async function claimOrderFunds(orderId: string, userId: string) {
       throw fail(400, 'You can claim this one day after the delivery window ends.', 'TOO_EARLY');
     }
     throw e;
+  }
+}
+
+// ─── Cancel (buyer, unpaid) ──────────────────────────────────────────────────
+
+/** The buyer cancels an order they have not paid for. Its stock goes back. */
+export async function cancelOrder(orderId: string, userId: string) {
+  const order = await loadOrder(orderId);
+  if (!isBuyer(order, userId)) throw fail(403, 'This is not your order');
+  if (!orderActions(order, 'buyer').cancel)
+    throw fail(400, 'This order can no longer be cancelled.');
+  await releaseUnpaidHolds({ _id: order._id });
+  const done = await Order.findOneAndUpdate(
+    { _id: order._id, paymentStatus: 'pending', status: { $nin: ['cancelled', 'refunded'] } },
+    { $set: { status: OrderStatus.CANCELLED, cancelledAt: new Date() } },
+    { new: true }
+  );
+  if (!done) throw fail(409, 'This order can no longer be cancelled.');
+  return { status: done.status };
+}
+
+// ─── Reject (seller, paid Buyer-Protected, not shipped) ──────────────────────
+
+/**
+ * The shop can't fill a paid order. Its stock goes back at once and the buyer
+ * is told to tap "Get my money back". Payluk refunds only through a dispute
+ * the buyer opens, so the refund itself is the buyer's one tap (requestRefund).
+ */
+export async function rejectOrder(orderId: string, userId: string, reason?: string) {
+  const order = await loadOrder(orderId);
+  if (!(await isSeller(order, userId))) throw fail(403, 'Only the shop can reject this order');
+  if (order.paymentType === 'normal') {
+    throw fail(
+      400,
+      'Normal Payment is already paid to you. Contact URA support to refund the buyer.',
+      'NORMAL_PAYMENT'
+    );
+  }
+  if (!orderActions(order, 'seller').reject)
+    throw fail(400, 'This order can no longer be rejected.');
+
+  const done = await Order.findOneAndUpdate(
+    {
+      _id: order._id,
+      rejectedAt: { $exists: false },
+      status: OrderStatus.PROCESSING,
+      payoutReleasedAt: { $exists: false },
+      disputeStatus: { $exists: false },
+    },
+    {
+      $set: {
+        rejectedAt: new Date(),
+        stockRestoredAt: new Date(),
+        ...(reason?.trim() ? { rejectReason: reason.trim().slice(0, 300) } : {}),
+      },
+    },
+    { new: true }
+  );
+  if (!done) throw fail(409, 'This order can no longer be rejected.');
+
+  // Paid orders had their stock taken: put it back.
+  for (const item of done.items) {
+    await Product.updateOne({ _id: item.product }, { $inc: { stock: item.quantity } });
+  }
+  notifyOrderEvent(done, 'REJECTED').catch(() => {});
+  return { rejected: true };
+}
+
+// ─── Get my money back (buyer, after the shop rejected) ─────────────────────
+
+/**
+ * Payluk refunds only by resolving a dispute the buyer opened. So this opens
+ * one for the buyer and URA resolves it as a full refund straight away
+ * (delivery fee included: nothing was delivered).
+ */
+export async function requestRefund(orderId: string, userId: string) {
+  const order = await loadOrder(orderId);
+  if (!isBuyer(order, userId)) throw fail(403, 'This is not your order');
+  if (!orderActions(order, 'buyer').getRefund)
+    throw fail(400, 'This order cannot be refunded here.');
+  if (!order.paylukPaymentToken || !order.paylukEscrowId)
+    throw fail(409, 'No payment found for this order');
+  const buyerId = await paylukIdOf(userId);
+  if (!buyerId) throw fail(422, 'Payment profile required', 'PAYLUK_PROFILE_REQUIRED');
+
+  const claimed = await Order.updateOne(
+    { _id: order._id, buyerReportedAt: { $exists: false } },
+    { $set: { buyerReportedAt: new Date() } }
+  );
+  if (!claimed.modifiedCount) throw fail(409, 'Your refund is already on its way.', 'ALREADY_SENT');
+
+  try {
+    await submitDispute({
+      paymentToken: order.paylukPaymentToken,
+      customerId: buyerId,
+      message: 'The shop rejected this order and could not fill it. Please refund me.',
+    });
+  } catch (e) {
+    await Order.updateOne({ _id: order._id }, { $unset: { buyerReportedAt: 1 } });
+    throw e;
+  }
+
+  try {
+    const escrow = await resolveDisputeAsRefund({
+      escrowId: order.paylukEscrowId,
+      resolution: `URA: the shop rejected order ${order.orderNumber}. Full refund to the buyer.`,
+      additionalFeeRefundable: true,
+    });
+    const updated = await applyEscrowState(
+      order,
+      escrow.id ? escrow : await verifyEscrow(order.paylukPaymentToken)
+    );
+    return {
+      refunded: updated.status === OrderStatus.REFUNDED,
+      pending: updated.status !== OrderStatus.REFUNDED,
+    };
+  } catch (e) {
+    // The dispute is open; a person must resolve it (e.g. not a super-admin key).
+    await flagOrder(
+      order._id,
+      `Refund after rejection needs resolving in Payluk: ${(e as Error).message}`.slice(0, 300)
+    );
+    await applyEscrowState(order, await verifyEscrow(order.paylukPaymentToken)).catch(
+      () => undefined
+    );
+    return { refunded: false, pending: true };
   }
 }

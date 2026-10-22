@@ -633,3 +633,28 @@ export async function executePaymentIntent(opts: {
     idempotent: true, // docs: verifying the same reference again is idempotent
   });
 }
+
+/**
+ * POST /v1/escrow/dispute/resolve/{escrowId} with status REFUNDED: return the
+ * held money to the buyer. Merchant-only: super-admin key, NO customer-id.
+ * Payluk only allows this once the buyer has opened a dispute ("No dispute
+ * found for this escrow" otherwise). multipart/form-data per the docs.
+ */
+export async function resolveDisputeAsRefund(opts: {
+  escrowId: string;
+  resolution: string;
+  /** true: the delivery fee goes back to the buyer too (nothing was delivered). */
+  additionalFeeRefundable: boolean;
+}): Promise<Escrow> {
+  const form = new FormData();
+  form.append('resolution', opts.resolution.slice(0, 1000));
+  form.append('status', 'REFUNDED');
+  form.append('additionalFeeRefundable', String(opts.additionalFeeRefundable));
+  const data = await paylukRequest({
+    method: 'POST',
+    path: `/v1/escrow/dispute/resolve/${encodeURIComponent(opts.escrowId)}`,
+    form,
+    priority: 'high',
+  });
+  return toEscrow(data);
+}

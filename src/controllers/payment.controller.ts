@@ -131,6 +131,44 @@ export const claimFunds = async (req: Request, res: Response) => {
   }
 };
 
+export const cancelOrder = async (req: Request, res: Response) => {
+  const userId = userIdOf(req, res);
+  if (!userId) return;
+  try {
+    return res
+      .status(200)
+      .json({ success: true, ...(await payments.cancelOrder(String(req.params.id), userId)) });
+  } catch (e) {
+    return sendError(res, e, 'Could not cancel the order');
+  }
+};
+
+export const rejectOrder = async (req: Request, res: Response) => {
+  const userId = userIdOf(req, res);
+  if (!userId) return;
+  try {
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason : undefined;
+    return res.status(200).json({
+      success: true,
+      ...(await payments.rejectOrder(String(req.params.id), userId, reason)),
+    });
+  } catch (e) {
+    return sendError(res, e, 'Could not reject the order');
+  }
+};
+
+export const requestRefund = async (req: Request, res: Response) => {
+  const userId = userIdOf(req, res);
+  if (!userId) return;
+  try {
+    return res
+      .status(200)
+      .json({ success: true, ...(await payments.requestRefund(String(req.params.id), userId)) });
+  } catch (e) {
+    return sendError(res, e, 'Could not request the refund');
+  }
+};
+
 // ─── Wallet ──────────────────────────────────────────────────────────────────
 
 /** The user's own Payluk customer id, or a clear answer when they have none. */

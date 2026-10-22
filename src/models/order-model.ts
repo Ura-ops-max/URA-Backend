@@ -87,6 +87,20 @@ export interface IOrder extends Document {
   splitDetails?: { sellerAmount?: number; buyerAmount?: number; pool?: number };
   /** Needs a person: e.g. Payluk refused the release with 401. */
   adminFlag?: { reason: string; at: Date };
+
+  // ── Order actions (Part 2) ─────────────────────────────────────────────
+  cancelledAt?: Date;
+  /** The shop can't fill a paid Buyer-Protected order; the buyer gets a refund. */
+  rejectedAt?: Date;
+  rejectReason?: string;
+  /** Stock already put back (so a later refund doesn't add it twice). */
+  stockRestoredAt?: Date;
+  buyerReportedAt?: Date;
+  sellerRespondedAt?: Date;
+  /** Payluk lets the seller claim one day after the delivery window. */
+  claimableAt?: Date;
+  /** Buyer-Protected: paid to the shop automatically at this time (Part 4). */
+  autoReleaseAt?: Date;
 }
 
 const OrderSchema: Schema = new Schema(
@@ -161,6 +175,14 @@ const OrderSchema: Schema = new Schema(
     disputedAt: { type: Date },
     splitDetails: { sellerAmount: Number, buyerAmount: Number, pool: Number },
     adminFlag: { reason: String, at: Date },
+    cancelledAt: { type: Date },
+    rejectedAt: { type: Date },
+    rejectReason: { type: String, maxlength: 300 },
+    stockRestoredAt: { type: Date },
+    buyerReportedAt: { type: Date },
+    sellerRespondedAt: { type: Date },
+    claimableAt: { type: Date },
+    autoReleaseAt: { type: Date },
   },
   { timestamps: true }
 );
