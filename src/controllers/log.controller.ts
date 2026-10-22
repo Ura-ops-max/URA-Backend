@@ -13,6 +13,17 @@ const getRecipientIds = async (req: Request) => {
   return [userId, ...userBusinesses.map(b => b._id)];
 };
 
+/**
+ * An order notice only needs the order's id and number to open it. Never send
+ * the whole order (payment codes, phone numbers, addresses) with a notice.
+ */
+export const trimRelatedOrders = (notifications: any[]) =>
+  notifications.map(n =>
+    n?.modelType === 'Order' && n.relatedId && typeof n.relatedId === 'object'
+      ? { ...n, relatedId: { _id: n.relatedId._id, orderNumber: n.relatedId.orderNumber } }
+      : n
+  );
+
 export const getNotifications = asyncHandler(async (req: Request, res: Response) => {
   const allRecipientIds = await getRecipientIds(req);
 
@@ -24,7 +35,7 @@ export const getNotifications = asyncHandler(async (req: Request, res: Response)
     .populate('relatedId')
     .lean();
 
-  res.status(200).json(notifications);
+  res.status(200).json(trimRelatedOrders(notifications));
 });
 
 export const markAsRead = asyncHandler(async (req: Request, res: Response) => {
