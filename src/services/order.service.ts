@@ -13,6 +13,7 @@ import {
 } from '@/services/fez.service';
 import { notifyOrderEvent } from '@/services/order-events.service';
 import {
+  unavailableMessage,
   holdItems,
   releaseItems,
   releaseUnpaidHolds,
@@ -104,7 +105,8 @@ export async function checkoutFromCart(
       throw err;
     }
     if (p.stock < item.quantity) {
-      const err: any = new Error(`"${p.name}" only has ${p.stock} unit(s) left in stock`);
+      const err: any = new Error(await unavailableMessage(p._id, p.name, p.stock));
+      err.code = 'STOCK_UNAVAILABLE';
       err.status = 400;
       throw err;
     }

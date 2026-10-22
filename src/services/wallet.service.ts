@@ -21,7 +21,9 @@ import {
  * Always send a valid 3-letter currency code.
  */
 export const normalizeCurrency = (c: unknown): string => {
-  const v = String(c ?? '').trim().toUpperCase();
+  const v = String(c ?? '')
+    .trim()
+    .toUpperCase();
   if (v === 'NG' || v === 'NAIRA' || v === '₦') return 'NGN';
   return /^[A-Z]{3}$/.test(v) ? v : 'NGN';
 };
