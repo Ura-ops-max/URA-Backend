@@ -101,6 +101,14 @@ export interface IOrder extends Document {
   claimableAt?: Date;
   /** Buyer-Protected: paid to the shop automatically at this time (Part 4). */
   autoReleaseAt?: Date;
+  /** Wait used when no product has a delivery time. */
+  autoReleaseDays?: number;
+  /** The buyer was told "Your money goes to <shop> in 6 hours". */
+  autoReleaseWarnedAt?: Date;
+  /** Who asked Payluk to release (set before the call). */
+  releaseRequestedBy?: 'buyer' | 'auto';
+  /** Who released the money: the buyer, the auto-release job, or an admin. */
+  releasedBy?: 'buyer' | 'auto' | 'admin';
 }
 
 const OrderSchema: Schema = new Schema(
@@ -183,6 +191,10 @@ const OrderSchema: Schema = new Schema(
     sellerRespondedAt: { type: Date },
     claimableAt: { type: Date },
     autoReleaseAt: { type: Date },
+    autoReleaseDays: { type: Number, default: 1, min: 1, max: 30 },
+    autoReleaseWarnedAt: { type: Date },
+    releaseRequestedBy: { type: String, enum: ['buyer', 'auto'] },
+    releasedBy: { type: String, enum: ['buyer', 'auto', 'admin'] },
   },
   { timestamps: true }
 );
@@ -191,5 +203,7 @@ const OrderSchema: Schema = new Schema(
 OrderSchema.index({ paymentStatus: 1, stockReserved: 1, reservedUntil: 1 });
 // Webhooks find the order by Payluk's escrow id.
 OrderSchema.index({ paylukEscrowId: 1 });
+// The auto-release job finds due Buyer-Protected orders quickly.
+OrderSchema.index({ paymentStatus: 1, autoReleaseAt: 1 });
 
 export default mongoose.model<IOrder>('Order', OrderSchema);

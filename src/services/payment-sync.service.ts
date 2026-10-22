@@ -14,11 +14,19 @@ import { User } from '@/models/user-model';
 import { PaylukJob } from '@/models/payluk-job-model';
 import { markOrderPaid, notifyOrderEvent } from '@/services/order-events.service';
 import { Escrow, isFunded } from '@/services/payluk.service';
+import { scheduleRelease } from '@/services/release-schedule.service';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** Queue the automatic release of a Normal order (at most one job per order). */
-export async function enqueueRelease(orderId: unknown): Promise<void> {
+/**
+ * Queue the release of an order to the seller (at most one job per order):
+ * a Normal order straight away, or a Buyer-Protected order whose auto-release
+ * time has come (`auto: true`).
+ */
+export async function enqueueRelease(
+  orderId: unknown,
+  { auto = false }: { auto?: boolean } = {}
+): Promise<void> {
   const now = new Date();
   await PaylukJob.updateOne(
     { key: `release:${String(orderId)}` },
@@ -26,7 +34,7 @@ export async function enqueueRelease(orderId: unknown): Promise<void> {
       $setOnInsert: {
         type: 'release',
         status: 'pending',
-        payload: { orderId: String(orderId) },
+        payload: { orderId: String(orderId), ...(auto ? { auto: true } : {}) },
         attempts: 0,
         runAt: now,
         // Retry 429/5xx with backoff for up to 24 hours, then flag for admin.
@@ -67,6 +75,17 @@ export async function applyEscrowState(order: IOrder, escrow: Escrow): Promise<I
 
   let current = (await Order.findById(id)) ?? order;
 
+  // Buyer-Protected: when the money goes to the shop by itself, and when the
+  // seller may claim it. Set once, the first time the order is seen paid.
+  if (
+    current.paymentStatus === 'paid' &&
+    current.paymentType !== 'normal' &&
+    (!current.autoReleaseAt || !current.claimableAt)
+  ) {
+    await scheduleRelease(id);
+    current = (await Order.findById(id)) ?? current;
+  }
+
   // 2. Normal Payment: release to the seller straight away.
   if (
     current.paymentType === 'normal' &&
@@ -84,6 +103,10 @@ export async function applyEscrowState(order: IOrder, escrow: Escrow): Promise<I
     case 'COMPLETED':
     case 'CLAIMED': {
       const set: Record<string, unknown> = { payoutReleasedAt: new Date() };
+      // Who released it: whoever asked us to (buyer or the auto job). A
+      // completion nobody here asked for was resolved by an admin.
+      const by = current.releaseRequestedBy ?? (escrow.status === 'COMPLETED' ? 'admin' : null);
+      if (by) set.releasedBy = by;
       // Buyer-Protected: the buyer confirmed (or the seller claimed after the
       // window), so the order is complete. Normal: completion happens at once,
       // before delivery, so the delivery status is left alone.

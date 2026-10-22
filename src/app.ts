@@ -13,6 +13,7 @@ import { socketService } from '@/services/socket.service';
 import { startImageIndexSweep } from '@/services/image-index-sweep.service';
 import { startStockHoldSweep } from '@/services/stock-hold.service';
 import { startPaylukWorker } from '@/services/payluk-jobs.service';
+import { startAutoReleaseJob } from '@/services/auto-release.service';
 
 // Import routes
 import routes from './routes';
@@ -133,6 +134,7 @@ const startServer = async (): Promise<void> => {
       startImageIndexSweep();
       startStockHoldSweep();
       startPaylukWorker();
+      startAutoReleaseJob();
     });
 
     // Graceful shutdown

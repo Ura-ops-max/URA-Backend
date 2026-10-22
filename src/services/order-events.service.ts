@@ -26,6 +26,7 @@ export type OrderEvent =
   | 'PAYOUT_RELEASED' // Normal Payment: released to the seller straight away
   | 'SPLIT' // dispute resolved by dividing the money
   | 'REJECTED' // the shop can't fill a paid Buyer-Protected order
+  | 'RELEASE_SOON' // Buyer-Protected: paid to the shop in 6 hours unless a problem is reported
   | 'DELIVERY_BOOKING_FAILED';
 
 const naira = (n: number) => `₦${Number(n || 0).toLocaleString('en-NG')}`;
@@ -126,7 +127,7 @@ export async function notifyOrderEvent(
   const isNormal = order.paymentType === 'normal';
   const nextStep =
     order.deliveryMethod === 'delivery'
-      ? ' (delivery is paid to Fez separately). Tap "Book delivery" when it is ready.'
+      ? ' (delivery is paid to Fez separately). Tap "Book a rider" when it is ready.'
       : '. Tap "Ready for pickup", or "I\'ll deliver it myself".';
 
   const copy: Record<OrderEvent, { buyer?: [string, string]; seller?: [string, string] }> = {
@@ -148,7 +149,7 @@ export async function notifyOrderEvent(
           ],
           seller: [
             'New paid order',
-            `${buyerName} paid for ${itemsText}. You'll receive ${itemsTotal} for the items when the buyer confirms they got them${nextStep}`,
+            `${buyerName} paid for ${itemsText}. You'll receive ${itemsTotal} for the items when the buyer confirms delivery, or by itself after the delivery time if no problem is reported${nextStep}`,
           ],
         },
     SHIPPED: {
@@ -181,28 +182,40 @@ export async function notifyOrderEvent(
         `${buyerName} has been told you're bringing order ${order.orderNumber}. Phone: ${order.shippingAddress?.phone ?? 'n/a'}.`,
       ],
     },
-    DELIVERED: {
-      buyer: [
-        'Order completed',
-        `Thanks! Order ${order.orderNumber} is complete and the seller has been paid.`,
-      ],
-      seller: [
-        'Payment released',
-        `The buyer confirmed order ${order.orderNumber}. ${itemsTotal} has been released to you.`,
-      ],
-    },
+    DELIVERED:
+      order.releasedBy === 'auto'
+        ? {
+            buyer: [
+              'Order completed',
+              `Order ${order.orderNumber} is complete. No problem was reported, so ${shopName} has been paid.`,
+            ],
+            seller: [
+              'Payment released',
+              `No problem was reported on order ${order.orderNumber}, so ${itemsTotal} has been released to you.`,
+            ],
+          }
+        : {
+            buyer: [
+              'Order completed',
+              `Thanks! Order ${order.orderNumber} is complete and the seller has been paid.`,
+            ],
+            seller: [
+              'Payment released',
+              `The buyer confirmed order ${order.orderNumber}. ${itemsTotal} has been released to you.`,
+            ],
+          },
     REFUNDED: {
       buyer: ['Order refunded', `Order ${order.orderNumber} was refunded.`],
       seller: ['Order refunded', `Order ${order.orderNumber} was refunded to the buyer.`],
     },
     DISPUTED: {
       buyer: [
-        'Dispute opened',
-        `A dispute is open on order ${order.orderNumber}. Payluk will review it.`,
+        'Problem reported',
+        `A problem was reported on order ${order.orderNumber}. URA will look into it.`,
       ],
       seller: [
-        'Dispute opened',
-        `A dispute is open on order ${order.orderNumber}. Funds are on hold while Payluk reviews it.`,
+        'Problem reported',
+        `The buyer reported a problem on order ${order.orderNumber}. The money is on hold. Open the order and tap "Respond to problem".`,
       ],
     },
     PAYOUT_RELEASED: {
@@ -213,12 +226,12 @@ export async function notifyOrderEvent(
     },
     SPLIT: {
       buyer: [
-        'Dispute resolved',
-        `The dispute on order ${order.orderNumber} was resolved by splitting the payment.`,
+        'Problem resolved',
+        `The problem on order ${order.orderNumber} was resolved by splitting the payment.`,
       ],
       seller: [
-        'Dispute resolved',
-        `The dispute on order ${order.orderNumber} was resolved by splitting the payment.`,
+        'Problem resolved',
+        `The problem on order ${order.orderNumber} was resolved by splitting the payment.`,
       ],
     },
     REJECTED: {
@@ -229,6 +242,12 @@ export async function notifyOrderEvent(
       seller: [
         'Order rejected',
         `You rejected order ${order.orderNumber}. The buyer has been told and will be refunded.`,
+      ],
+    },
+    RELEASE_SOON: {
+      buyer: [
+        `Your money goes to ${shopName} in 6 hours`,
+        `Your money goes to ${shopName} in 6 hours. Tap here if there is a problem.`,
       ],
     },
     DELIVERY_BOOKING_FAILED: {
@@ -249,7 +268,7 @@ export async function notifyOrderEvent(
       targetId: String(buyer._id),
       targetModel: 'User',
       type: 'BOTH',
-      activityData: { action: `ORDER_${event}`, description: `${title} — ${order.orderNumber}` },
+      activityData: { action: `ORDER_${event}`, description: `${title}: ${order.orderNumber}` },
       notificationData: {
         type: 'BUSINESS',
         title,
@@ -272,7 +291,7 @@ export async function notifyOrderEvent(
       targetId: String(seller._id),
       targetModel: 'User',
       type: 'BOTH',
-      activityData: { action: `ORDER_${event}`, description: `${title} — ${order.orderNumber}` },
+      activityData: { action: `ORDER_${event}`, description: `${title}: ${order.orderNumber}` },
       notificationData: {
         type: 'BUSINESS',
         title,

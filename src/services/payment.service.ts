@@ -302,6 +302,10 @@ export async function confirmReceived(orderId: string, userId: string) {
   const buyerId = await paylukIdOf(userId);
   if (!buyerId) throw fail(422, 'Payment profile required', 'PAYLUK_PROFILE_REQUIRED');
 
+  await Order.updateOne(
+    { _id: order._id },
+    { $set: { releaseRequestedAt: new Date(), releaseRequestedBy: 'buyer' } }
+  );
   const after = await confirmEscrow(order.paylukEscrowId, buyerId);
   const updated = await applyEscrowState(order, after.id ? after : escrow);
   return { status: updated.status, payoutReleased: Boolean(updated.payoutReleasedAt) };
