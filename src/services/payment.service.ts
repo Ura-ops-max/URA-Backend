@@ -28,8 +28,7 @@ import {
 import { applyEscrowState, flagOrder } from '@/services/payment-sync.service';
 import { orderActions } from '@/services/order-view.service';
 import { notifyOrderEvent } from '@/services/order-events.service';
-import { releaseUnpaidHolds } from '@/services/stock-hold.service';
-import { holdExpiry, holdItems } from '@/services/stock-hold.service';
+import { holdExpiry, holdItems, releaseUnpaidHolds } from '@/services/stock-hold.service';
 import { toPaylukDeliveryWindow } from '@/utils/delivery-window.utils';
 import { invalidateWalletCache } from '@/services/wallet.service';
 
