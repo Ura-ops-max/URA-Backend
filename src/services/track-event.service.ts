@@ -13,6 +13,8 @@ type NotificationData = {
   type: string;
   title: string;
   message: string;
+  /** One line for the pop-up and push; the message is used when missing. */
+  summary?: string;
   sender: string;
   senderModel: string;
   relatedId?: string;
@@ -71,7 +73,7 @@ export const trackEvent = async (params: TrackEventParams) => {
     if (n.modelType === 'Order' && targetModel === 'User' && n.relatedId) {
       sendPushToUser(String(targetId), {
         title: n.title,
-        body: n.message,
+        body: n.summary ?? n.message,
         url: `/dashboard/orders/${n.relatedId}`,
       }).catch(e => console.error('[push] order notice failed:', (e as Error).message));
     }

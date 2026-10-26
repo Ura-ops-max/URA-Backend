@@ -37,6 +37,8 @@ const NotificationSchema = new Schema({
   },
   title: { type: String, required: true },
   message: { type: String, required: true },
+  /** Optional one-line text for the pop-up and push (e.g. "Amaka O. just paid for ..."). */
+  summary: { type: String, maxlength: 200 },
   link: { type: String },
 
   relatedId: { type: Schema.Types.ObjectId, refPath: 'modelType' },
