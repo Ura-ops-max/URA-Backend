@@ -15,7 +15,6 @@ import { trackEvent } from '@/services/track-event.service';
 import { sendOrderEmail } from '@/templates/emails';
 import { config } from '@/config/env.config';
 import { socketService } from '@/services/socket.service';
-import { sendPushToUser } from '@/services/push.service';
 
 export type OrderEvent =
   | 'PAID'
@@ -324,11 +323,5 @@ export async function notifyOrderEvent(
       buyerFirstName: buyer.firstName ?? '',
       shopName,
     });
-    // Web push too, so the seller hears about it with URA closed.
-    sendPushToUser(String(seller._id), {
-      title: `New paid order ${order.orderNumber}`,
-      body: buyer.firstName ? `From ${buyer.firstName}` : 'A customer just paid.',
-      url: orderLink,
-    }).catch(e => console.error('[order-events] push failed:', (e as Error).message));
   }
 }
