@@ -14,8 +14,7 @@ import { Business } from '@/models/business-model';
 import { trackEvent } from '@/services/track-event.service';
 import { sendOrderEmail } from '@/templates/emails';
 import { config } from '@/config/env.config';
-import { socketService } from '@/services/socket.service';
-import { sendPushToUser } from '@/services/push.service';
+import { shortName } from '@/services/order-view.service';
 
 export type OrderEvent =
   | 'PAID'
@@ -32,6 +31,45 @@ export type OrderEvent =
   | 'DELIVERY_BOOKING_FAILED';
 
 const naira = (n: number) => `₦${Number(n || 0).toLocaleString('en-NG')}`;
+
+const MAX_ITEM_NAME = 40;
+/** About 2 lines on a 360 px phone. */
+const POPUP_MAX_CHARS = 68;
+
+const moreItems = (n: number) => (n > 0 ? ` and ${n} more item${n > 1 ? 's' : ''}` : '');
+
+/**
+ * "2x Chicken shawarma", or "2x Chicken shawarma and 1 more item". Long names
+ * are shortened (with "…") to `maxName` characters.
+ */
+export function orderItemsSummary(
+  items: { name: string; quantity: number }[],
+  maxName = MAX_ITEM_NAME
+): string {
+  if (!items.length) return 'an order';
+  const first = items[0];
+  const name =
+    first.name.length > maxName ? `${first.name.slice(0, maxName - 1).trimEnd()}…` : first.name;
+  return `${first.quantity}x ${name}${moreItems(items.length - 1)}`;
+}
+
+/**
+ * The seller's pop-up, push and email line for a new paid order:
+ * "Amaka O. just paid for 2x Chicken shawarma. ₦12,000". First name and last
+ * initial only; never a phone number, email or full name. The item name is
+ * shortened when needed so the whole line, amount included, fits 2 lines.
+ */
+export function paidPopupText(
+  buyer: { firstName?: string | null; lastName?: string | null },
+  items: { name: string; quantity: number; price: number }[],
+  amount = items.reduce((s, i) => s + i.price * i.quantity, 0)
+): string {
+  const head = `${shortName(buyer.firstName, buyer.lastName)} just paid for `;
+  const tail = `. ${naira(amount)}`;
+  const fixed = `${head}${items[0]?.quantity ?? 1}x ${moreItems(items.length - 1)}${tail}`.length;
+  const budget = Math.max(8, Math.min(MAX_ITEM_NAME, POPUP_MAX_CHARS - fixed));
+  return `${head}${orderItemsSummary(items, budget)}${tail}`;
+}
 
 /**
  * Mark an order paid exactly once. The status flip is a single atomic update,
@@ -116,8 +154,9 @@ export async function notifyOrderEvent(
   }
 
   const shopName = business.businessName;
-  const buyerName = `${buyer.firstName ?? ''} ${buyer.lastName ?? ''}`.trim() || 'A customer';
-  const itemsText = order.items.map(i => `${i.name} ×${i.quantity}`).join(', ');
+  // Sellers see "Amaka O.", never the buyer's full name or contacts.
+  const buyerName = shortName(buyer.firstName, buyer.lastName);
+  const paidText = paidPopupText(buyer, order.items, order.itemsTotal ?? undefined);
   const total = naira(order.totalAmount);
   // What the seller actually receives: the items only. Delivery (Fez) and any
   // platform fee are paid outside the seller's escrow.
@@ -129,8 +168,8 @@ export async function notifyOrderEvent(
   const isNormal = order.paymentType === 'normal';
   const nextStep =
     order.deliveryMethod === 'delivery'
-      ? ' (delivery is paid to Fez separately). Tap "Book a rider" when it is ready.'
-      : '. Tap "Ready for pickup", or "I\'ll deliver it myself".';
+      ? ' Delivery is paid to Fez separately. Tap "Book a rider" when it is ready.'
+      : ' Tap "Ready for pickup", or "I\'ll deliver it myself".';
 
   const copy: Record<OrderEvent, { buyer?: [string, string]; seller?: [string, string] }> = {
     PAID: isNormal
@@ -141,7 +180,7 @@ export async function notifyOrderEvent(
           ],
           seller: [
             `New paid order ${order.orderNumber}`,
-            `${buyerName} paid for ${itemsText}. ${itemsTotal} for the items is being paid to your wallet now (Normal Payment)${nextStep}`,
+            `${paidText}. It is being paid to your wallet now (Normal Payment).${nextStep}`,
           ],
         }
       : {
@@ -151,7 +190,7 @@ export async function notifyOrderEvent(
           ],
           seller: [
             `New paid order ${order.orderNumber}`,
-            `${buyerName} paid for ${itemsText}. You'll receive ${itemsTotal} for the items when the buyer confirms delivery, or by itself after the delivery time if no problem is reported${nextStep}`,
+            `${paidText}. You get ${itemsTotal} when the buyer confirms delivery, or by itself after the delivery time if no problem is reported.${nextStep}`,
           ],
         },
     SHIPPED: {
@@ -181,7 +220,7 @@ export async function notifyOrderEvent(
       ],
       seller: [
         'Delivering it yourself',
-        `${buyerName} has been told you're bringing order ${order.orderNumber}. Phone: ${order.shippingAddress?.phone ?? 'n/a'}.`,
+        `${buyerName} has been told you're bringing order ${order.orderNumber}. Their phone number is on the order page.`,
       ],
     },
     DELIVERED:
@@ -261,6 +300,9 @@ export async function notifyOrderEvent(
   };
 
   const msgs = copy[event];
+  // One short line for the pop-up and the push. The seller's new-paid-order
+  // line is also how its message and email start.
+  const sellerSummary = event === 'PAID' ? paidText : undefined;
   const relatedId = String(order._id);
 
   // Buyer: in-app (sent "from" the shop) + email.
@@ -302,6 +344,7 @@ export async function notifyOrderEvent(
         senderModel: 'User',
         relatedId,
         modelType: 'Order',
+        ...(sellerSummary ? { summary: sellerSummary } : {}),
       },
     }).catch(e => console.error('[order-events] seller notice failed:', e));
     if (seller.email) {
@@ -314,21 +357,5 @@ export async function notifyOrderEvent(
         event === 'PAID' ? title : undefined
       );
     }
-  }
-
-  // Seller's live alert (banner and horn in the app). Names only, no contacts.
-  if (event === 'PAID') {
-    socketService.emitTo(String(seller._id), 'order_paid', {
-      orderId: relatedId,
-      orderNumber: order.orderNumber,
-      buyerFirstName: buyer.firstName ?? '',
-      shopName,
-    });
-    // Web push too, so the seller hears about it with URA closed.
-    sendPushToUser(String(seller._id), {
-      title: `New paid order ${order.orderNumber}`,
-      body: buyer.firstName ? `From ${buyer.firstName}` : 'A customer just paid.',
-      url: orderLink,
-    }).catch(e => console.error('[order-events] push failed:', (e as Error).message));
   }
 }
