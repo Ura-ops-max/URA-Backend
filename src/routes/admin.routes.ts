@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { requireAuth } from '@/middleware/passport-auth';
 import { User } from '@/models/user-model';
 import Order from '@/models/order-model';
+import { readinessReport } from '@/seo/report';
 
 /**
  * Admin-only reports. URA has no admin role yet, so admins are the signed-in
@@ -97,6 +98,11 @@ router.get('/reports/delivery', requireAuth, requireAdmin, async (req: Request, 
     days: days.map(d => ({ date: d._id, ...d, _id: undefined })),
     totals: { ...totals, net: (totals.deliveryFeesReceived || 0) - (totals.fezCostsPaid || 0) },
   });
+});
+
+/** GET /admin/reports/seo: shops ready for Google, and top reasons for the rest. Read-only. */
+router.get('/reports/seo', requireAuth, requireAdmin, async (_req: Request, res: Response) => {
+  res.json({ success: true, ...(await readinessReport()) });
 });
 
 export default router;

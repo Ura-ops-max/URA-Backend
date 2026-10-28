@@ -14,6 +14,7 @@ import { startImageIndexSweep } from '@/services/image-index-sweep.service';
 import { startStockHoldSweep } from '@/services/stock-hold.service';
 import { startPaylukWorker } from '@/services/payluk-jobs.service';
 import { startAutoReleaseJob } from '@/services/auto-release.service';
+import { startSeoReadinessJob } from '@/seo/readiness-job';
 
 // Import routes
 import routes from './routes';
@@ -135,6 +136,7 @@ const startServer = async (): Promise<void> => {
       startStockHoldSweep();
       startPaylukWorker();
       startAutoReleaseJob();
+      startSeoReadinessJob();
     });
 
     // Graceful shutdown
