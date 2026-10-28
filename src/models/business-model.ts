@@ -40,6 +40,16 @@ export interface IBusiness extends Document {
     fullAddress: string;
   };
   isVerified: boolean;
+  /** Neighbourhood, e.g. "Ora East". Optional, shown with city and state. */
+  area?: string;
+  /** Customers can visit a shop. Default false (most sell from home). */
+  hasPhysicalStore?: boolean;
+  /** Show the street address. Only used when hasPhysicalStore is true too. */
+  showStreetAddress?: boolean;
+  /** Let Google list this shop. Default true. */
+  showOnGoogle?: boolean;
+  /** Sent "Your shop can now be found on Google" (once). */
+  googleReadyNotifiedAt?: Date;
   location?: IPoint;
   operatingHours: IOperatingHour[];
   followers: Types.ObjectId[];
@@ -76,6 +86,11 @@ const businessSchema = new Schema<IBusiness>(
       country: { type: String },
       fullAddress: { type: String },
     },
+    area: { type: String, trim: true, maxlength: 80 },
+    hasPhysicalStore: { type: Boolean, default: false },
+    showStreetAddress: { type: Boolean, default: false },
+    showOnGoogle: { type: Boolean, default: true },
+    googleReadyNotifiedAt: { type: Date },
     location: {
       type: {
         type: String,
