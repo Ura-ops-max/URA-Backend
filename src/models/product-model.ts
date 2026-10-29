@@ -1,4 +1,7 @@
 import { Schema, model, Document, Types } from 'mongoose';
+import { invalidateSeoForBusiness } from '@/seo/cache';
+import { PRODUCT_CONTENT_FIELDS, trackContentEdits } from '@/seo/content-edits';
+import { DeletedProduct } from './deleted-product-model';
 
 export interface IProduct extends Document {
   business: Types.ObjectId;
@@ -30,6 +33,8 @@ export interface IProduct extends Document {
   imageEmbedding?: number[];
 
   // ── Payluk Escrow ──────────────────────────────
+  /** Last real content edit (not likes). For sitemap lastmod. */
+  contentUpdatedAt?: Date;
   paylukEscrowId: string | null;
   paylukPaymentToken: string | null;
   createdAt: Date;
@@ -74,6 +79,7 @@ export const productSchema = new Schema<IProduct>(
     },
 
     // PAYLUK FIELDS
+    contentUpdatedAt: { type: Date },
     paylukEscrowId: { type: String, default: null },
     paylukPaymentToken: { type: String, default: null },
   },
@@ -87,6 +93,21 @@ productSchema.index({ name: 'text', description: 'text' });
 productSchema.index({ business: 1, sku: 1 });
 
 /** Query filter for products shoppers may see and buy (not switched Off). */
+trackContentEdits(productSchema, PRODUCT_CONTENT_FIELDS);
+// Built shop/product pages (Google visibility) are refreshed when a product
+// changes; a deleted product is remembered so its page says "410 Gone".
+productSchema.post('save', (doc: any) => invalidateSeoForBusiness(doc?.business));
+productSchema.post('findOneAndUpdate', (doc: any) => doc && invalidateSeoForBusiness(doc.business));
+productSchema.post('findOneAndDelete', async (doc: any) => {
+  if (!doc) return;
+  invalidateSeoForBusiness(doc.business);
+  await DeletedProduct.updateOne(
+    { productId: doc._id },
+    { $setOnInsert: { business: doc.business, deletedAt: new Date() } },
+    { upsert: true }
+  ).catch(() => undefined);
+});
+
 export const VISIBLE_PRODUCT = { isHidden: { $ne: true } } as const;
 
 export const Product = model<IProduct>('Product', productSchema);

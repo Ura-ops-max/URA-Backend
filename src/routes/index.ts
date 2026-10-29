@@ -22,6 +22,7 @@ import deliveryRoutes from '@/routes/delivery.routes';
 import publicBusinessRoutes from '@/routes/public-business.routes';
 import adsRoutes from '@/routes/ads.routes';
 import pushRoutes from '@/routes/push.routes';
+import seoRoutes from '@/routes/seo.routes';
 
 const router = Router();
 
@@ -44,6 +45,8 @@ router.use('/onboarding', onboardingRoutes);
 router.use('/wallet', walletRoutes);
 // Web push subscriptions (sellers' new-order alerts).
 router.use('/push', pushRoutes);
+// Google visibility: shop/product pages, sitemap, robots, readiness.
+router.use('/seo', seoRoutes);
 router.use('/admin', adminRoutes);
 router.use('/assistant', assistantRoutes);
 router.use('/delivery', deliveryRoutes);

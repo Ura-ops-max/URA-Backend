@@ -5,10 +5,8 @@ import { asyncHandler } from '@/middleware/errorHandler';
 import { HTTP_STATUS } from '@/constants';
 import { NotFoundError } from '@/utils/errors';
 import { Business, RESERVED_SLUGS } from '@/models/business-model';
-import { User } from '@/models/user-model';
-import { Post } from '@/models/post-model';
 import { config } from '@/config/env.config';
-import { publicBusiness, countShopProducts } from '@/utils/business-public.utils';
+import { publicBusinessPayload } from '@/services/public-business.service';
 
 const getAuthUserId = (req: Request): string | null => {
   const user = (req as any).user;
@@ -24,54 +22,9 @@ const getAuthUserId = (req: Request): string | null => {
  */
 export const getPublicBusinessBySlug = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
-    const slug = String(req.params.slug);
-
-    const business = await Business.findOne({ slug: slug.toLowerCase() });
-    if (!business) throw new NotFoundError('Business not found');
-
-    const owner = await User.findById(business.owner).select(
-      'firstName lastName username profilePicture'
-    );
-
-    const [posts, postCount, productCount] = await Promise.all([
-      Post.find({ author: business._id, authorType: 'Business' }).sort({ createdAt: -1 }).limit(10),
-      Post.countDocuments({ author: business._id, authorType: 'Business' }),
-      countShopProducts(business._id),
-    ]);
-
-    const loggedInUserId = getAuthUserId(req);
-    const isOwner = !!loggedInUserId && String(business.owner) === loggedInUserId;
-    let isFollowing = false;
-    let isBookmarked = false;
-    if (loggedInUserId) {
-      isFollowing = business.followers.some(id => id.toString() === loggedInUserId);
-      const loggedInUser = await User.findById(loggedInUserId).select('bookmarkedBusinesses');
-      isBookmarked = loggedInUser
-        ? loggedInUser.bookmarkedBusinesses.some(
-            id => id.toString() === (business._id as any).toString()
-          )
-        : false;
-    }
-
-    res.status(HTTP_STATUS.OK).json({
-      success: true,
-      business: publicBusiness(business, isOwner),
-      owner,
-      related: {
-        isFollowing,
-        isBookmarked,
-        isOwner,
-        recentPosts: posts,
-        counts: {
-          posts: postCount,
-          products: productCount,
-          followers: business.followers.length,
-        },
-      },
-      // Lets the frontend know whether the visitor needs to sign in to act
-      // (order, chat, review) vs. just browsing.
-      viewerAuthenticated: Boolean(loggedInUserId),
-    });
+    const payload = await publicBusinessPayload(String(req.params.slug), getAuthUserId(req));
+    if (!payload) throw new NotFoundError('Business not found');
+    res.status(HTTP_STATUS.OK).json({ success: true, ...payload });
   }
 );
 

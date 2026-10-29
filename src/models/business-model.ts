@@ -1,4 +1,6 @@
 import { Schema, model, Document, Types } from 'mongoose';
+import { invalidateSeoForBusiness } from '@/seo/cache';
+import { SHOP_CONTENT_FIELDS, trackContentEdits } from '@/seo/content-edits';
 
 // Interface for GeoJSON
 interface IPoint {
@@ -40,6 +42,18 @@ export interface IBusiness extends Document {
     fullAddress: string;
   };
   isVerified: boolean;
+  /** Neighbourhood, e.g. "Ora East". Optional, shown with city and state. */
+  area?: string;
+  /** Customers can visit a shop. Default false (most sell from home). */
+  hasPhysicalStore?: boolean;
+  /** Show the street address. Only used when hasPhysicalStore is true too. */
+  showStreetAddress?: boolean;
+  /** Let Google list this shop. Default true. */
+  showOnGoogle?: boolean;
+  /** Sent "Your shop can now be found on Google" (once). */
+  googleReadyNotifiedAt?: Date;
+  /** Last real content edit (not likes or follows). For sitemap lastmod. */
+  contentUpdatedAt?: Date;
   location?: IPoint;
   operatingHours: IOperatingHour[];
   followers: Types.ObjectId[];
@@ -76,6 +90,12 @@ const businessSchema = new Schema<IBusiness>(
       country: { type: String },
       fullAddress: { type: String },
     },
+    area: { type: String, trim: true, maxlength: 80 },
+    hasPhysicalStore: { type: Boolean, default: false },
+    showStreetAddress: { type: Boolean, default: false },
+    showOnGoogle: { type: Boolean, default: true },
+    googleReadyNotifiedAt: { type: Date },
+    contentUpdatedAt: { type: Date },
     location: {
       type: {
         type: String,
@@ -140,6 +160,11 @@ businessSchema.pre<IBusiness>('save', async function (next) {
   next();
 });
 
+trackContentEdits(businessSchema, SHOP_CONTENT_FIELDS);
+// Built shop pages (Google visibility) are refreshed when the shop changes.
+businessSchema.post('save', (doc: any) => invalidateSeoForBusiness(doc?._id));
+businessSchema.post('findOneAndUpdate', (doc: any) => doc && invalidateSeoForBusiness(doc._id));
+
 export const Business = model<IBusiness>('Business', businessSchema);
 
 // ── Slug generation ─────────────────────────────────────────────
@@ -172,6 +197,32 @@ export const RESERVED_SLUGS = new Set([
   'search',
   'cart',
   'checkout',
+  // App pages and static folders, kept in line with the frontend routes and
+  // the page-builder's routing rule (docs/google-routing.md).
+  'welcome',
+  'google',
+  'payment-complete',
+  'payluk',
+  'p',
+  'seo',
+  'sitemap',
+  'sitemaps',
+  'robots',
+  'assets',
+  'images',
+  'sounds',
+  'mock-data',
+  'sw',
+  'static',
+  'favicon',
+  'manifest',
+  'site',
+  'menu',
+  'notifications',
+  'wallet',
+  'orders',
+  'chat',
+  'inventory',
 ]);
 
 export function slugify(input: string): string {

@@ -83,6 +83,10 @@ export const updateBusiness = asyncHandler(async (req: Request, res: Response): 
     businessLogo,
     businessCover,
     operatingHours,
+    area,
+    hasPhysicalStore,
+    showStreetAddress,
+    showOnGoogle,
   } = req.body;
 
   // Use dot-notation and only include fields that were actually sent.
@@ -99,6 +103,11 @@ export const updateBusiness = asyncHandler(async (req: Request, res: Response): 
   setIfPresent('businessLogo', businessLogo);
   setIfPresent('businessCover', businessCover);
   setIfPresent('operatingHours', operatingHours);
+  // Area may be cleared; the switches may be turned off.
+  if (typeof area === 'string') updateData.area = area.trim();
+  for (const [k, v] of Object.entries({ hasPhysicalStore, showStreetAddress, showOnGoogle })) {
+    if (typeof v === 'boolean') updateData[k] = v;
+  }
 
   setIfPresent('contact.phone', phone);
   setIfPresent('contact.website', website);

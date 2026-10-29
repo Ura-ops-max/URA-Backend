@@ -55,6 +55,11 @@ export const userBusinessFields = {
   state: Joi.string().allow('', null).optional(),
   country: Joi.string().allow('', null).optional(),
   email: Joi.string().email().allow('', null).optional(),
+  // Google visibility (all optional).
+  area: Joi.string().max(80).trim().allow('', null).optional(),
+  hasPhysicalStore: Joi.boolean().optional(),
+  showStreetAddress: Joi.boolean().optional(),
+  showOnGoogle: Joi.boolean().optional(),
   businessLogo: uriSchema.label('Business Logo'),
   businessCover: uriSchema.label('Business Cover'),
   operatingHours: Joi.array()
