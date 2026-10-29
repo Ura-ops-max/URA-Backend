@@ -1,5 +1,6 @@
 import { Schema, model, Document, Types } from 'mongoose';
 import { invalidateSeoForBusiness } from '@/seo/cache';
+import { SHOP_CONTENT_FIELDS, trackContentEdits } from '@/seo/content-edits';
 
 // Interface for GeoJSON
 interface IPoint {
@@ -51,6 +52,8 @@ export interface IBusiness extends Document {
   showOnGoogle?: boolean;
   /** Sent "Your shop can now be found on Google" (once). */
   googleReadyNotifiedAt?: Date;
+  /** Last real content edit (not likes or follows). For sitemap lastmod. */
+  contentUpdatedAt?: Date;
   location?: IPoint;
   operatingHours: IOperatingHour[];
   followers: Types.ObjectId[];
@@ -92,6 +95,7 @@ const businessSchema = new Schema<IBusiness>(
     showStreetAddress: { type: Boolean, default: false },
     showOnGoogle: { type: Boolean, default: true },
     googleReadyNotifiedAt: { type: Date },
+    contentUpdatedAt: { type: Date },
     location: {
       type: {
         type: String,
@@ -156,6 +160,7 @@ businessSchema.pre<IBusiness>('save', async function (next) {
   next();
 });
 
+trackContentEdits(businessSchema, SHOP_CONTENT_FIELDS);
 // Built shop pages (Google visibility) are refreshed when the shop changes.
 businessSchema.post('save', (doc: any) => invalidateSeoForBusiness(doc?._id));
 businessSchema.post('findOneAndUpdate', (doc: any) => doc && invalidateSeoForBusiness(doc._id));

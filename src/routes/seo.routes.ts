@@ -4,6 +4,8 @@ import { Business } from '@/models/business-model';
 import { siteUrl } from '@/seo/config';
 import { shopsWithReadiness } from '@/seo/shop-data';
 import { buildPage } from '@/seo/pages';
+import { robotsTxt, sitemapXml } from '@/seo/sitemap';
+import { SEO_CONFIG } from '@/seo/config';
 
 // Google visibility. Public page, sitemap and robots routes are added below.
 const router = Router();
@@ -41,6 +43,24 @@ router.get('/page', async (req: Request, res: Response) => {
   }
   if (page.status >= 400) res.set('X-Robots-Tag', 'noindex');
   res.status(page.status).set('Cache-Control', cache).type('html').send(page.html);
+});
+
+/** GET /seo/sitemap/:file ('index' is /sitemap.xml; others are /sitemaps/<file>.xml). */
+router.get('/sitemap/:file', async (req: Request, res: Response) => {
+  const xml = await sitemapXml(String(req.params.file).replace(/\.xml$/, ''));
+  if (!xml) {
+    res.status(404).type('text/plain').send('Not found');
+    return;
+  }
+  res
+    .set('Cache-Control', `public, max-age=300, s-maxage=${SEO_CONFIG.sitemapCacheSeconds}`)
+    .type('application/xml')
+    .send(xml);
+});
+
+/** GET /seo/robots (served as /robots.txt). */
+router.get('/robots', (_req: Request, res: Response) => {
+  res.set('Cache-Control', 'public, max-age=3600').type('text/plain').send(robotsTxt());
 });
 
 export default router;
