@@ -1,11 +1,10 @@
 import { Router, Request, Response } from 'express';
 import { requireAuth } from '@/middleware/passport-auth';
 import { Business } from '@/models/business-model';
-import { siteUrl } from '@/seo/config';
+import { SEO_CONFIG, siteUrl } from '@/seo/config';
 import { shopsWithReadiness } from '@/seo/shop-data';
 import { buildPage } from '@/seo/pages';
 import { robotsTxt, sitemapXml } from '@/seo/sitemap';
-import { SEO_CONFIG } from '@/seo/config';
 
 // Google visibility. Public page, sitemap and robots routes are added below.
 const router = Router();
