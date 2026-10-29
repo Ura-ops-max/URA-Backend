@@ -35,6 +35,7 @@ describe('publicBusiness (the public shop API)', () => {
     expect(json).not.toContain('3.31');
     expect(out.publicLocation).toMatchObject({ text: 'Ora East, Ikeja, Lagos', street: null });
     expect(out.address).toEqual({ city: 'Ikeja', state: 'Lagos', country: 'Nigeria' });
+    expect(JSON.stringify(publicBusiness({ ...home, contact: { email: 'me@x.com', phone: '0803' } }, false))).not.toContain('me@x.com');
   });
   it('a shop with a store that shows its address keeps it', () => {
     const out: any = publicBusiness({ ...home, hasPhysicalStore: true, showStreetAddress: true }, false);

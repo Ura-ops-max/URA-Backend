@@ -1,4 +1,5 @@
 import { Schema, model, Document, Types } from 'mongoose';
+import { invalidateSeoForBusiness } from '@/seo/cache';
 
 // Interface for GeoJSON
 interface IPoint {
@@ -155,6 +156,10 @@ businessSchema.pre<IBusiness>('save', async function (next) {
   next();
 });
 
+// Built shop pages (Google visibility) are refreshed when the shop changes.
+businessSchema.post('save', (doc: any) => invalidateSeoForBusiness(doc?._id));
+businessSchema.post('findOneAndUpdate', (doc: any) => doc && invalidateSeoForBusiness(doc._id));
+
 export const Business = model<IBusiness>('Business', businessSchema);
 
 // ── Slug generation ─────────────────────────────────────────────
@@ -187,6 +192,32 @@ export const RESERVED_SLUGS = new Set([
   'search',
   'cart',
   'checkout',
+  // App pages and static folders, kept in line with the frontend routes and
+  // the page-builder's routing rule (docs/google-routing.md).
+  'welcome',
+  'google',
+  'payment-complete',
+  'payluk',
+  'p',
+  'seo',
+  'sitemap',
+  'sitemaps',
+  'robots',
+  'assets',
+  'images',
+  'sounds',
+  'mock-data',
+  'sw',
+  'static',
+  'favicon',
+  'manifest',
+  'site',
+  'menu',
+  'notifications',
+  'wallet',
+  'orders',
+  'chat',
+  'inventory',
 ]);
 
 export function slugify(input: string): string {

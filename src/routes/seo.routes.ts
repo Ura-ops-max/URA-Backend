@@ -3,6 +3,7 @@ import { requireAuth } from '@/middleware/passport-auth';
 import { Business } from '@/models/business-model';
 import { siteUrl } from '@/seo/config';
 import { shopsWithReadiness } from '@/seo/shop-data';
+import { buildPage } from '@/seo/pages';
 
 // Google visibility. Public page, sitemap and robots routes are added below.
 const router = Router();
@@ -23,6 +24,23 @@ router.get('/readiness/mine', requireAuth, async (req: Request, res: Response) =
       nextSteps: r.nextSteps,
     })),
   });
+});
+
+/**
+ * GET /seo/page?path=/<slug> or /<slug>/p/<id>-<name>
+ * The built page (real HTML for Google and people alike). The host sends shop
+ * and product paths here (docs/google-routing.md).
+ */
+router.get('/page', async (req: Request, res: Response) => {
+  const path = typeof req.query.path === 'string' ? req.query.path : '/';
+  const page = await buildPage(path);
+  const cache = `public, max-age=300, s-maxage=${page.cacheSeconds}`;
+  if (page.location) {
+    res.set('Cache-Control', cache).redirect(301, page.location);
+    return;
+  }
+  if (page.status >= 400) res.set('X-Robots-Tag', 'noindex');
+  res.status(page.status).set('Cache-Control', cache).type('html').send(page.html);
 });
 
 export default router;

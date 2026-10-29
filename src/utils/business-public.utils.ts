@@ -14,6 +14,8 @@ export function publicBusiness(business: any, isOwner: boolean): Record<string, 
     delete obj.likes;
     delete obj.loanEligibility;
     delete obj.googleReadyNotifiedAt;
+    // The shop page never shows the contact email; keep it private.
+    if (obj.contact) obj.contact = { ...obj.contact, email: undefined };
     if (!streetAllowed(obj)) {
       if (obj.address) {
         obj.address = {

@@ -1,4 +1,6 @@
 import { Schema, model, Document, Types } from 'mongoose';
+import { invalidateSeoForBusiness } from '@/seo/cache';
+import { DeletedProduct } from './deleted-product-model';
 
 export interface IProduct extends Document {
   business: Types.ObjectId;
@@ -87,6 +89,20 @@ productSchema.index({ name: 'text', description: 'text' });
 productSchema.index({ business: 1, sku: 1 });
 
 /** Query filter for products shoppers may see and buy (not switched Off). */
+// Built shop/product pages (Google visibility) are refreshed when a product
+// changes; a deleted product is remembered so its page says "410 Gone".
+productSchema.post('save', (doc: any) => invalidateSeoForBusiness(doc?.business));
+productSchema.post('findOneAndUpdate', (doc: any) => doc && invalidateSeoForBusiness(doc.business));
+productSchema.post('findOneAndDelete', async (doc: any) => {
+  if (!doc) return;
+  invalidateSeoForBusiness(doc.business);
+  await DeletedProduct.updateOne(
+    { productId: doc._id },
+    { $setOnInsert: { business: doc.business, deletedAt: new Date() } },
+    { upsert: true }
+  ).catch(() => undefined);
+});
+
 export const VISIBLE_PRODUCT = { isHidden: { $ne: true } } as const;
 
 export const Product = model<IProduct>('Product', productSchema);
