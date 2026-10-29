@@ -18,7 +18,10 @@
     "docker:build": "docker build -t ura-backend .",
     "docker:dev": "docker-compose up -d",
     "docker:down": "docker-compose down",
-    "migrate": "bun run src/scripts/migrate.ts"
+    "migrate": "bun run src/scripts/migrate.ts",
+    "seo:check": "bun run src/scripts/seo-check.ts",
+    "seo:report": "bun run src/scripts/seo-report.ts",
+    "seo:audit": "bun run src/scripts/seo-audit.ts"
   },
   "keywords": [
     "mern",
