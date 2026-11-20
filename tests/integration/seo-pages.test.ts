@@ -158,7 +158,7 @@ describe('product page', () => {
 
 describe('app routes are untouched', () => {
   it('app pages, files and api paths pass through as the plain app', async () => {
-    for (const path of ['/dashboard', '/dashboard/wallet', '/auth/login', '/about', '/api/v1/orders', '/assets/index-abc.js', '/robots.txt', '/payment-complete', '/a/b']) {
+    for (const path of ['/dashboard', '/dashboard/wallet', '/auth/login', '/about', '/api/v1/orders', '/assets/index-abc.js', '/robots.txt', '/payment-complete', '/delete-account', '/a/b']) {
       expect(parseSitePath(path)).toEqual({ kind: 'app' });
       const page = await buildPage(path);
       expect(page).toMatchObject({ status: 200, html: INDEX_HTML });

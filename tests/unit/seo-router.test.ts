@@ -20,7 +20,7 @@ describe('Lambda@Edge routing', () => {
   });
 
   it('app routes, /api and static files are never taken over', () => {
-    for (const p of ['/', '/dashboard', '/dashboard/wallet', '/auth/login', '/about', '/api/v1/orders', '/assets/index-abc.js', '/sw.js', '/favicon-32.png', '/payment-complete', '/welcome', '/tunde-boots/extra', '/tunde-boots/p/not-an-id']) {
+    for (const p of ['/', '/dashboard', '/dashboard/wallet', '/auth/login', '/about', '/api/v1/orders', '/assets/index-abc.js', '/sw.js', '/favicon-32.png', '/payment-complete', '/welcome', '/delete-account', '/tunde-boots/extra', '/tunde-boots/p/not-an-id']) {
       expect(edge.route(p)).toBeNull();
     }
   });
