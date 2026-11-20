@@ -223,6 +223,7 @@ export const RESERVED_SLUGS = new Set([
   'orders',
   'chat',
   'inventory',
+  'delete-account',
 ]);
 
 export function slugify(input: string): string {

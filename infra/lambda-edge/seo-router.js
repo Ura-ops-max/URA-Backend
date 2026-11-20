@@ -65,6 +65,7 @@ const RESERVED = new Set([
   'orders',
   'chat',
   'inventory',
+  'delete-account',
 ]);
 
 const SLUG = /^[a-z0-9-]{1,80}$/;
