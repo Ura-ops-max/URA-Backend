@@ -15,6 +15,8 @@ import express from 'express';
 import crypto from 'crypto';
 import { PaylukWebhookEvent } from '@/models/payluk-webhook-event-model';
 import { PaylukJob } from '@/models/payluk-job-model';
+import { applyChowdeckEvent, verifyChowdeckSignature } from '@/services/chowdeck-webhook.service';
+import { parseChowdeckEvent } from '@/services/courier.service';
 
 const router = express.Router();
 
@@ -96,6 +98,39 @@ router.post('/payluk', async (req, res) => {
     if (e?.code !== 11000) console.error('[webhook] could not queue event:', e?.message);
   }
 
+  return res.status(200).json({ ok: true });
+});
+
+/**
+ * Chowdeck Relay delivery events: POST /api/v1/webhooks/chowdeck
+ * Signed with HMAC-SHA256 of the RAW body (hex) in `x-chowdeck-signature`,
+ * keyed with CHOWDECK_WEBHOOK_SECRET. Applied once per status; answers 200
+ * fast, including for events we don't act on.
+ * TODO(chowdeck-q5): Relay delivery webhooks are not documented yet (only
+ * food-order events are). If Relay sends none, poll getChowdeckDelivery.
+ */
+router.post('/chowdeck', async (req, res) => {
+  const secret = process.env.CHOWDECK_WEBHOOK_SECRET || '';
+  if (!secret) {
+    console.error('[webhook] CHOWDECK_WEBHOOK_SECRET is not set; cannot verify Chowdeck webhooks');
+    return res.status(500).json({ ok: false });
+  }
+  const signature = String(req.headers['x-chowdeck-signature'] || '');
+  if (!verifyChowdeckSignature((req as any).rawBody, signature, secret)) {
+    console.warn('[webhook] rejected: missing or invalid x-chowdeck-signature');
+    return res.status(401).json({ ok: false, message: 'Invalid signature' });
+  }
+
+  try {
+    const event = parseChowdeckEvent(req.body);
+    const result = await applyChowdeckEvent(event);
+    console.log(
+      `[webhook] chowdeck ref=${event.reference ?? '-'} status=${event.status ?? '-'} → ${result}`
+    );
+  } catch (e: any) {
+    // Still 200: a retry would hit the same problem; the error is logged.
+    console.error('[webhook] chowdeck event failed:', e?.message);
+  }
   return res.status(200).json({ ok: true });
 });
 

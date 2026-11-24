@@ -8,9 +8,23 @@ import { createPaylukCustomer } from '@/services/payluk.service';
 import {
   createDeliveryOrder,
   isFezConfigured,
-  getDeliveryCost,
   type CreateDeliveryInput,
 } from '@/services/fez.service';
+import {
+  createChowdeckDelivery,
+  getChowdeckBooking,
+  getChowdeckQuote,
+  isChowdeckConfigured,
+  ChowdeckError,
+} from '@/services/chowdeck.service';
+import {
+  anyCourierConfigured,
+  dropoffPlace,
+  generateDeliveryPin,
+  quoteDelivery,
+  shopPlace,
+  type CourierProvider,
+} from '@/services/courier.service';
 import { notifyOrderEvent } from '@/services/order-events.service';
 import {
   moneyNote,
@@ -32,6 +46,8 @@ export interface ShippingAddress {
   /** Destination state — what the Fez delivery quote is priced on. */
   state?: string;
   phone: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 export type PaymentType = 'normal' | 'protected';
@@ -64,6 +80,7 @@ export async function checkoutFromCart(
   // Shipping is only charged on the delivery option. The fee is priced by the
   // server with Fez below (never trusted from the browser).
   let deliveryFee = 0;
+  let deliveryProvider: CourierProvider | undefined;
   const deliveryMethod = delivery?.deliveryMethod === 'delivery' ? 'delivery' : 'pickup';
   // normal: released to the seller as soon as it's paid; seller pays Payluk's fee.
   // protected: held until the buyer confirms; fee per the product's setting.
@@ -138,26 +155,36 @@ export async function checkoutFromCart(
     throw err;
   }
 
-  // Price delivery on the server with Fez — never trust a fee from the browser.
+  // Price delivery on the server — never trust a fee from the browser.
+  // Chowdeck for same-city routes it serves, otherwise Fez (courier.service).
   if (deliveryMethod === 'delivery') {
     if (!shippingAddress.state) {
       const err: any = new Error('Your delivery state is required.');
       err.status = 400;
       throw err;
     }
-    if (!isFezConfigured()) {
+    if (!anyCourierConfigured()) {
       const err: any = new Error('Delivery is not available right now.');
       err.status = 503;
       throw err;
     }
-    const sellerBiz = await Business.findById(firstProduct?.business).select('address').lean();
-    const pickUpState = (sellerBiz as any)?.address?.state as string | undefined;
+    const sellerBiz = await Business.findById(firstProduct?.business)
+      .select('address location')
+      .lean();
     try {
-      const quote = await getDeliveryCost({
-        state: shippingAddress.state,
-        ...(pickUpState ? { pickUpState } : {}),
+      const quote = await quoteDelivery({
+        shop: sellerBiz as any,
+        dropoff: {
+          state: shippingAddress.state,
+          city: shippingAddress.city,
+          fullAddress: shippingAddress.fullAddress,
+          latitude: shippingAddress.latitude ?? null,
+          longitude: shippingAddress.longitude ?? null,
+        },
+        orderValueNaira: totalAmount,
       });
       deliveryFee = Math.max(0, Math.round(Number(quote.totalCost) || 0));
+      deliveryProvider = quote.provider;
     } catch (e: any) {
       const err: any = new Error(
         e?.message || `Delivery to ${shippingAddress.state} isn't available right now.`
@@ -221,8 +248,12 @@ export async function checkoutFromCart(
       itemsTotal: totalAmount,
       deliveryFee,
       deliveryFeeCharged: deliveryFee,
-      // URA pays Fez from its own account; the quote is what we expect to pay.
-      ...(deliveryMethod === 'delivery' ? { fezCost: deliveryFee } : {}),
+      // URA pays the courier from its own account; the quote is what we expect to pay.
+      ...(deliveryMethod === 'delivery' && deliveryProvider === 'chowdeck'
+        ? { deliveryProvider, chowdeckCost: deliveryFee }
+        : deliveryMethod === 'delivery'
+          ? { deliveryProvider: 'fez', fezCost: deliveryFee }
+          : {}),
       platformFee,
       deliveryMethod,
       shippingAddress,
@@ -304,6 +335,11 @@ export const getOrderByIdForUser = async (orderId: string, userId: string) => {
     throw e;
   }
   const role: ViewerRole = isBuyer ? 'buyer' : 'seller';
+  // The delivery PIN is hidden from every query; only the buyer gets it.
+  if (isBuyer) {
+    const pin = await Order.findById(order._id).select('+deliveryPin deliveryPin').lean();
+    if ((pin as any)?.deliveryPin) (order as any).deliveryPin = (pin as any).deliveryPin;
+  }
   return { order, role, actions: orderActions(order, role), moneyNote: moneyNote(order, role) };
 };
 
@@ -363,7 +399,12 @@ export const markOrderReady = async (
     throw e;
   }
 
-  if (order.deliveryMethod === 'delivery') {
+  if (order.deliveryMethod === 'delivery' && order.deliveryProvider === 'chowdeck') {
+    await bookChowdeck(order);
+    order.status = OrderStatus.SHIPPED;
+    await order.save();
+    notifyOrderEvent(order, 'SHIPPED').catch(() => {});
+  } else if (order.deliveryMethod === 'delivery') {
     if (!isFezConfigured()) {
       const e: any = new Error(
         'Delivery booking is not set up yet. Please arrange delivery yourself.'
@@ -426,3 +467,116 @@ export const markOrderReady = async (
   }
   return order;
 };
+
+/** Chowdeck's item_type: the first product's category, or "package". */
+async function itemTypeFor(order: any): Promise<string> {
+  const { Product } = await import('@/models/product-model');
+  const p = await Product.findById(order.items?.[0]?.product).select('category').lean();
+  return String((p as any)?.category || 'package').slice(0, 60);
+}
+
+/**
+ * Book the Chowdeck rider for a ready order (docs/chowdeck-relay-integration.md 4.3):
+ * re-quote (fee quotes expire), then create the delivery with reference =
+ * orderNumber. A retry after a booking that already went through is safe:
+ * Chowdeck rejects the duplicate reference and we load the existing booking.
+ */
+async function bookChowdeck(order: any): Promise<void> {
+  if (!isChowdeckConfigured()) {
+    const e: any = new Error(
+      'Delivery booking is not set up yet. Please arrange delivery yourself.'
+    );
+    e.status = 503;
+    throw e;
+  }
+  const [buyer, business] = await Promise.all([
+    User.findById(order.user).select('firstName lastName email'),
+    Business.findById(order.business).select('businessName address location contact'),
+  ]);
+  const subtotal = order.items.reduce((sum: number, i: any) => sum + i.price * i.quantity, 0);
+
+  // One PIN per order, saved before calling Chowdeck, so a retry sends the
+  // same PIN the rider already has.
+  const withPin = await Order.findById(order._id).select('+deliveryPin').lean();
+  let deliveryPin = (withPin as any)?.deliveryPin as number | undefined;
+  if (!deliveryPin) {
+    deliveryPin = generateDeliveryPin();
+    await Order.updateOne({ _id: order._id }, { $set: { deliveryPin } });
+  }
+
+  const address = [
+    order.shippingAddress?.fullAddress,
+    order.shippingAddress?.city,
+    order.shippingAddress?.state,
+  ]
+    .filter(Boolean)
+    .join(', ');
+  const itemsText = order.items.map((i: any) => `${i.name} x${i.quantity}`).join(', ');
+
+  try {
+    const quote = await getChowdeckQuote({
+      pickup: shopPlace(business as any),
+      dropoff: dropoffPlace({
+        state: order.shippingAddress?.state || '',
+        city: order.shippingAddress?.city,
+        fullAddress: order.shippingAddress?.fullAddress,
+        latitude: order.shippingAddress?.latitude ?? null,
+        longitude: order.shippingAddress?.longitude ?? null,
+      }),
+      orderValueNaira: subtotal,
+    });
+
+    let booking;
+    try {
+      booking = await createChowdeckDelivery({
+        feeId: quote.feeId,
+        reference: order.orderNumber,
+        itemType: await itemTypeFor(order),
+        orderValueNaira: subtotal,
+        sender: {
+          name: business?.businessName || 'URA shop',
+          phone: (business as any)?.contact?.phone || '',
+        },
+        recipient: {
+          name: `${buyer?.firstName ?? ''} ${buyer?.lastName ?? ''}`.trim() || 'URA customer',
+          phone: order.shippingAddress?.phone,
+          ...(buyer?.email ? { email: buyer.email } : {}),
+        },
+        // TODO(chowdeck-q3): the create call takes no address; we assume the
+        // fee quote's addresses are used, and send the address in the note too.
+        note: `Deliver to: ${address}. Items: ${itemsText}`.slice(0, 500),
+        deliveryPin,
+      });
+    } catch (err) {
+      if (err instanceof ChowdeckError && err.isDuplicateReference) {
+        booking = await getChowdeckBooking(order.orderNumber);
+      } else {
+        throw err;
+      }
+    }
+
+    const cost = booking.priceNaira || quote.totalNaira;
+    if (cost > (order.deliveryFeeCharged ?? order.deliveryFee ?? 0)) {
+      // URA absorbs the difference, as with Fez.
+      console.warn(
+        `[markOrderReady] Chowdeck cost ₦${cost} is above the ₦${order.deliveryFeeCharged ?? order.deliveryFee} charged for ${order.orderNumber}`
+      );
+    }
+    order.fulfilment = 'chowdeck';
+    order.trackingNumber = booking.reference || order.orderNumber;
+    if (booking.trackingUrl) order.trackingUrl = booking.trackingUrl;
+    order.chowdeckCost = cost;
+    order.deliveryStatus = 'booked';
+    order.deliveryUpdatedAt = new Date();
+    // The delivery cost is now spent (see the Fez branch).
+    order.riderBookedAt = new Date();
+  } catch (err) {
+    console.error('[markOrderReady] Chowdeck booking failed:', (err as Error).message);
+    notifyOrderEvent(order, 'DELIVERY_BOOKING_FAILED').catch(() => {});
+    const e: any = new Error(
+      'Could not book a delivery rider right now. Please try again shortly.'
+    );
+    e.status = 502;
+    throw e;
+  }
+}
