@@ -1,8 +1,8 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { requireAuth } from '@/middleware/passport-auth';
-import { User } from '@/models/user-model';
 import Order from '@/models/order-model';
 import { readinessReport } from '@/seo/report';
+import { isAdminUser } from '@/utils/admin.utils';
 
 /**
  * Admin-only reports. URA has no admin role yet, so admins are the signed-in
@@ -11,13 +11,7 @@ import { readinessReport } from '@/seo/report';
 const router = Router();
 
 async function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  const admins = String(process.env.ADMIN_EMAILS || '')
-    .split(',')
-    .map(s => s.trim().toLowerCase())
-    .filter(Boolean);
-  const userId = (req as any).user?._id;
-  const u = userId ? await User.findById(userId).select('email').lean() : null;
-  if (!u || !admins.includes(String((u as any).email).toLowerCase())) {
+  if (!(await isAdminUser((req as any).user?._id))) {
     res.status(403).json({ success: false, message: 'Admins only' });
     return;
   }
@@ -27,7 +21,8 @@ async function requireAdmin(req: Request, res: Response, next: NextFunction) {
 /**
  * GET /admin/reports/delivery?from=YYYY-MM-DD&to=YYYY-MM-DD
  * Per day (by payment date): delivery fees charged to buyers, delivery fees
- * Payluk has paid into URA's merchant wallet, and Fez costs for booked riders.
+ * Payluk has paid into URA's merchant wallet, and Fez and Chowdeck costs for
+ * booked riders.
  */
 router.get('/reports/delivery', requireAuth, requireAdmin, async (req: Request, res: Response) => {
   const to = req.query.to ? new Date(String(req.query.to)) : new Date();
@@ -67,7 +62,31 @@ router.get('/reports/delivery', requireAuth, requireAdmin, async (req: Request, 
         ridersBooked: { $sum: { $cond: [{ $ifNull: ['$riderBookedAt', false] }, 1, 0] } },
         fezCostsPaid: {
           $sum: {
-            $cond: [{ $ifNull: ['$riderBookedAt', false] }, { $ifNull: ['$fezCost', 0] }, 0],
+            $cond: [
+              {
+                $and: [
+                  { $ifNull: ['$riderBookedAt', false] },
+                  { $ne: ['$fulfilment', 'chowdeck'] },
+                ],
+              },
+              { $ifNull: ['$fezCost', 0] },
+              0,
+            ],
+          },
+        },
+        // Chowdeck Relay deliveries, paid from URA's Relay wallet.
+        chowdeckCostsPaid: {
+          $sum: {
+            $cond: [
+              {
+                $and: [
+                  { $ifNull: ['$riderBookedAt', false] },
+                  { $eq: ['$fulfilment', 'chowdeck'] },
+                ],
+              },
+              { $ifNull: ['$chowdeckCost', 0] },
+              0,
+            ],
           },
         },
       },
@@ -84,6 +103,7 @@ router.get('/reports/delivery', requireAuth, requireAdmin, async (req: Request, 
         'deliveryFeesPending',
         'ridersBooked',
         'fezCostsPaid',
+        'chowdeckCostsPaid',
       ])
         t[k] = (t[k] || 0) + (d[k] || 0);
       return t;
@@ -96,7 +116,13 @@ router.get('/reports/delivery', requireAuth, requireAdmin, async (req: Request, 
     from: from.toISOString().slice(0, 10),
     to: end.toISOString().slice(0, 10),
     days: days.map(d => ({ date: d._id, ...d, _id: undefined })),
-    totals: { ...totals, net: (totals.deliveryFeesReceived || 0) - (totals.fezCostsPaid || 0) },
+    totals: {
+      ...totals,
+      net:
+        (totals.deliveryFeesReceived || 0) -
+        (totals.fezCostsPaid || 0) -
+        (totals.chowdeckCostsPaid || 0),
+    },
   });
 });
 

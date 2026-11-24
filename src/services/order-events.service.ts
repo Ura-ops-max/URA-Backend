@@ -28,7 +28,13 @@ export type OrderEvent =
   | 'SPLIT' // dispute resolved by dividing the money
   | 'REJECTED' // the shop can't fill a paid Buyer-Protected order
   | 'RELEASE_SOON' // Buyer-Protected: paid to the shop in 6 hours unless a problem is reported
-  | 'DELIVERY_BOOKING_FAILED';
+  | 'DELIVERY_BOOKING_FAILED'
+  // Courier updates (Chowdeck webhook). None of them completes the order.
+  | 'RIDER_ASSIGNED'
+  | 'RIDER_PICKED_UP'
+  | 'RIDER_ARRIVED'
+  | 'COURIER_DELIVERED'
+  | 'COURIER_FAILED';
 
 const naira = (n: number) => `₦${Number(n || 0).toLocaleString('en-NG')}`;
 
@@ -289,6 +295,53 @@ export async function notifyOrderEvent(
       buyer: [
         `Your money goes to ${shopName} in 6 hours`,
         `Your money goes to ${shopName} in 6 hours. Tap here if there is a problem.`,
+      ],
+    },
+    RIDER_ASSIGNED: {
+      buyer: [
+        'A rider is on the way',
+        `A rider is going to ${shopName} to collect order ${order.orderNumber}.`,
+      ],
+      seller: [
+        'Rider coming to collect',
+        `A rider is on the way to collect order ${order.orderNumber}. Please have it packed.`,
+      ],
+    },
+    RIDER_PICKED_UP: {
+      buyer: [
+        'Your order is on its way',
+        `Order ${order.orderNumber} has been picked up and is on its way to you.`,
+      ],
+      seller: ['Order picked up', `The rider picked up order ${order.orderNumber}.`],
+    },
+    RIDER_ARRIVED: {
+      buyer: [
+        'Your rider has arrived',
+        `The rider has arrived with order ${order.orderNumber}. Have your delivery PIN ready (it is on your order page).`,
+      ],
+    },
+    COURIER_DELIVERED: {
+      buyer: [
+        'Order delivered',
+        isNormal
+          ? `Order ${order.orderNumber} was delivered.`
+          : `Order ${order.orderNumber} was delivered. If you have everything, open the order and tap "Confirm delivery".`,
+      ],
+      seller: [
+        'Order delivered',
+        isNormal
+          ? `Order ${order.orderNumber} was delivered to the buyer.`
+          : `Order ${order.orderNumber} was delivered. You are paid when the buyer confirms delivery.`,
+      ],
+    },
+    COURIER_FAILED: {
+      buyer: [
+        'Delivery problem',
+        `The delivery of order ${order.orderNumber} did not go through. URA will be in touch.`,
+      ],
+      seller: [
+        'Delivery problem',
+        `The delivery of order ${order.orderNumber} was cancelled or failed. URA will be in touch.`,
       ],
     },
     DELIVERY_BOOKING_FAILED: {

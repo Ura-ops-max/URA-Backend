@@ -70,6 +70,15 @@ export const setupPaylukCustomer = async (req: Request, res: Response) => {
 
 // ─── Checkout ─────────────────────────────────────────────────────────────────
 
+/** latitude/longitude when both are real numbers in range; otherwise nothing. */
+const validCoords = (lat: unknown, lng: unknown): { latitude?: number; longitude?: number } => {
+  const la = Number(lat);
+  const lo = Number(lng);
+  if (lat == null || lng == null || !Number.isFinite(la) || !Number.isFinite(lo)) return {};
+  if (Math.abs(la) > 90 || Math.abs(lo) > 180) return {};
+  return { latitude: la, longitude: lo };
+};
+
 export const createOrderFromCart = async (req: Request, res: Response) => {
   try {
     const userId = getAuthUserId(req);
@@ -96,6 +105,8 @@ export const createOrderFromCart = async (req: Request, res: Response) => {
       city: bodyAddress?.city || saved.city,
       state: bodyAddress?.state || saved.state,
       phone: bodyAddress?.phone || saved.phone,
+      // Optional: the buyer's location, for a more accurate courier quote.
+      ...validCoords(bodyAddress?.latitude, bodyAddress?.longitude),
     };
 
     // City & full address are temporarily optional (hidden on the checkout form).

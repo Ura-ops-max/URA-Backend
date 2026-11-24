@@ -37,6 +37,9 @@ export interface IOrder extends Document {
     city: string;
     state?: string;
     phone: string;
+    /** Optional, from the buyer's phone location: more accurate courier quotes. */
+    latitude?: number;
+    longitude?: number;
   };
   status: OrderStatus;
   paymentStatus: 'pending' | 'paid' | 'failed';
@@ -46,8 +49,8 @@ export interface IOrder extends Document {
   paylukEscrowId?: string | null; // Buyer releases this escrow when they confirm receipt
   paidAt?: Date;
   trackingNumber?: string;
-  /** How it reaches the buyer: Fez rider, buyer collects, or the shop delivers itself. */
-  fulfilment?: 'fez' | 'pickup' | 'seller_delivery';
+  /** How it reaches the buyer: Fez or Chowdeck rider, buyer collects, or the shop delivers itself. */
+  fulfilment?: 'fez' | 'chowdeck' | 'pickup' | 'seller_delivery';
   orderNumber: string;
   /** Stock was taken off the shelf at checkout and not yet released. */
   stockReserved?: boolean;
@@ -71,6 +74,18 @@ export interface IOrder extends Document {
   /** What Fez quoted for the delivery. URA pays Fez from its own account. */
   fezCost?: number;
   riderBookedAt?: Date;
+  // ── Courier (Chowdeck Relay or Fez), all optional ───────────────────────
+  /** Which courier priced the delivery at checkout (booking uses the same). */
+  deliveryProvider?: 'fez' | 'chowdeck';
+  /** What Chowdeck charges URA's Relay wallet (naira). */
+  chowdeckCost?: number;
+  /** Live tracking page from the courier (Chowdeck). */
+  trackingUrl?: string;
+  /** 4-digit PIN the rider asks for at handover. Only ever shown to the buyer. */
+  deliveryPin?: number;
+  /** Courier status: booked, awaiting_pickup, in_transit, arrived, delivered, cancelled, failed. */
+  deliveryStatus?: string;
+  deliveryUpdatedAt?: Date;
   /** Payluk paid URA's additionalFee (payment.delivery.success). */
   deliveryFeeReceived?: number;
   deliveryFeeReceivedAt?: Date;
@@ -135,6 +150,8 @@ const OrderSchema: Schema = new Schema(
       city: { type: String },
       state: { type: String },
       phone: { type: String, required: true },
+      latitude: { type: Number },
+      longitude: { type: Number },
     },
     status: {
       type: String,
@@ -157,7 +174,7 @@ const OrderSchema: Schema = new Schema(
     paylukEscrowId: { type: String, default: null },
     paidAt: Date,
     trackingNumber: { type: String },
-    fulfilment: { type: String, enum: ['fez', 'pickup', 'seller_delivery'] },
+    fulfilment: { type: String, enum: ['fez', 'chowdeck', 'pickup', 'seller_delivery'] },
     stockReserved: { type: Boolean, default: false },
     reservedUntil: { type: Date },
 
@@ -170,6 +187,14 @@ const OrderSchema: Schema = new Schema(
     deliveryFeeCharged: { type: Number },
     fezCost: { type: Number },
     riderBookedAt: { type: Date },
+    deliveryProvider: { type: String, enum: ['fez', 'chowdeck'] },
+    chowdeckCost: { type: Number },
+    trackingUrl: { type: String },
+    // Hidden from every query unless asked for (.select('+deliveryPin')), so
+    // it can't leak to the seller, lists or notices by accident.
+    deliveryPin: { type: Number, select: false },
+    deliveryStatus: { type: String },
+    deliveryUpdatedAt: { type: Date },
     deliveryFeeReceived: { type: Number },
     deliveryFeeReceivedAt: { type: Date },
     commissionReceived: { type: Number },
@@ -202,6 +227,8 @@ const OrderSchema: Schema = new Schema(
 // Finds expired holds quickly.
 OrderSchema.index({ paymentStatus: 1, stockReserved: 1, reservedUntil: 1 });
 // Webhooks find the order by Payluk's escrow id.
+// Couriers look orders up by tracking number (webhooks and tracking).
+OrderSchema.index({ trackingNumber: 1 });
 OrderSchema.index({ paylukEscrowId: 1 });
 // The auto-release job finds due Buyer-Protected orders quickly.
 OrderSchema.index({ paymentStatus: 1, autoReleaseAt: 1 });

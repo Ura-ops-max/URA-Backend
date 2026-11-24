@@ -15,6 +15,7 @@ import { PaylukJob } from '@/models/payluk-job-model';
 import { markOrderPaid, notifyOrderEvent } from '@/services/order-events.service';
 import { Escrow, isFunded } from '@/services/payluk.service';
 import { scheduleRelease } from '@/services/release-schedule.service';
+import { cancelCourierBooking } from '@/services/courier.service';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -164,6 +165,11 @@ export async function applyEscrowState(order: IOrder, escrow: Escrow): Promise<I
         }
         const after = await Order.findById(id);
         if (after) notifyOrderEvent(after, 'REFUNDED').catch(() => {});
+        // A Chowdeck rider booked for it is cancelled (before pickup only;
+        // otherwise it is flagged for an admin). Never blocks the refund.
+        if (after?.fulfilment === 'chowdeck') {
+          cancelCourierBooking(after, 'Order refunded').catch(() => {});
+        }
       }
       break;
     }
